@@ -1,4 +1,4 @@
-const CACHE_NAME = "wt-cache-v7";
+const CACHE_NAME = "wt-cache-v8";
 const ASSETS = [
   "./",
   "./index.html",
@@ -27,30 +27,53 @@ self.addEventListener("activate", (event) => {
 });
 
 // Fetch:
-// - For the main page load (navigation), try the network first so updates come through.
-// - For everything else, use cache first for speed/offline.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
+  const url = new URL(req.url);
 
-  // Page navigations (loading the app) — network first
+  // Only handle same-origin requests (your site)
+  if (url.origin !== self.location.origin) return;
+
+  // 1) Page navigations — network first
   if (req.mode === "navigate") {
     event.respondWith(
       fetch(req)
         .then((resp) => {
           const copy = resp.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
           return resp;
         })
-        .catch(() => caches.match("./index.html"))
+        .catch(() => caches.match(req))
     );
     return;
   }
 
-  // Everything else — cache first
+  // 2) Core assets that must update reliably — network first
+  const isCoreAsset =
+    url.pathname.endsWith("/app.js") ||
+    url.pathname.endsWith("/styles.css") ||
+    url.pathname.endsWith("/manifest.json");
+
+  if (isCoreAsset) {
+    event.respondWith(
+      fetch(req)
+        .then((resp) => {
+          const copy = resp.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+          return resp;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // 3) Everything else — cache first (fine for icons, etc.)
   event.respondWith(
     caches.match(req).then((cached) => cached || fetch(req))
   );
 });
+
+
 
 
 
