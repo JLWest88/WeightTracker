@@ -12,7 +12,7 @@
     <header class="topbar">
       <div>
         <h1>Weight Tracker</h1>
-        <p class="sub">Trailing averages (no calendar resets) + weekly baseline change.</p>
+        <p class="sub">Trailing averages (calendar-windowed) with prior-period comparison.</p>
       </div>
       <div class="pill" id="installHint" hidden>Tip: Add to Home Screen</div>
     </header>
@@ -40,7 +40,7 @@
           <button id="clearBtn" class="ghost" title="Clears all local data">Clear all</button>
         </div>
         <p class="tiny muted">
-          Data is stored locally on this device (offline). Missed days are ignored (no zero-fill).
+          Data is stored locally on this device (offline). Averages are based on calendar days; missed days are skipped (no zero-fill).
         </p>
       </section>
 
@@ -49,29 +49,40 @@
           <div class="label">Latest date</div>
           <div class="value" id="latestDate">—</div>
         </div>
+
         <div class="card metric">
           <div class="label">Latest weight</div>
           <div class="value" id="latestWeight">—</div>
         </div>
+
         <div class="card metric">
           <div class="label">MA7</div>
           <div class="value" id="ma7">—</div>
-          <div class="tiny muted">7-day trailing average</div>
+          <div class="tiny muted">Current (last 7 calendar days)</div>
+          <div class="tiny muted">Prior: <span id="ma7Prev">—</span></div>
+          <div class="tiny muted">Δ: <span id="ma7Delta">—</span></div>
         </div>
+
         <div class="card metric">
           <div class="label">MA14</div>
           <div class="value" id="ma14">—</div>
-          <div class="tiny muted">14-day trailing average</div>
+          <div class="tiny muted">Current (last 14 calendar days)</div>
+          <div class="tiny muted">Prior: <span id="ma14Prev">—</span></div>
+          <div class="tiny muted">Δ: <span id="ma14Delta">—</span></div>
         </div>
+
         <div class="card metric">
           <div class="label">MA28</div>
           <div class="value" id="ma28">—</div>
-          <div class="tiny muted">28-day trailing average</div>
+          <div class="tiny muted">Current (last 28 calendar days)</div>
+          <div class="tiny muted">Prior: <span id="ma28Prev">—</span></div>
+          <div class="tiny muted">Δ: <span id="ma28Delta">—</span></div>
         </div>
+
         <div class="card metric">
           <div class="label">Weekly change</div>
           <div class="value" id="weeklyChange">—</div>
-          <div class="tiny muted">MA7(today) − MA7(7 days ago)</div>
+          <div class="tiny muted">MA7(current) − MA7(prior)</div>
         </div>
       </section>
 
@@ -84,21 +95,34 @@
       <section class="card">
         <h2>How the math works</h2>
         <ul class="tiny">
-          <li><b>MA7</b>: average of entries dated within 6 days before your latest logged date through the latest logged date.</li>
-          <li><b>Weekly change</b>: MA7(latest) minus MA7(ending 7 days earlier). Updates daily, no calendar reset.</li>
-          <li>If you skip a day, it’s simply not counted (no zeros inserted).</li>
+          <li>
+            <b>MA7 / MA14 / MA28</b>: averages of entries dated within the last 7 / 14 / 28
+            calendar days relative to your latest logged date.
+          </li>
+          <li>
+            <b>Prior</b>: the immediately preceding calendar window of the same length.
+          </li>
+          <li>
+            <b>Δ</b>: current average minus prior average (positive means upward trend).
+          </li>
+          <li>
+            If you skip a day, it is simply not counted (no zeros inserted).
+          </li>
         </ul>
       </section>
     </main>
 
-    <script src="app.js?v=20260201"></script>
+    <script src="app.js?v=20260202"></script>
     <script>
       if ("serviceWorker" in navigator) {
-        window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
+        window.addEventListener("load", () =>
+          navigator.serviceWorker.register("./sw.js")
+        );
       }
     </script>
   </body>
 </html>
+
 
 
 
