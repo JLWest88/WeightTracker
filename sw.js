@@ -1,7 +1,8 @@
-const CACHE_NAME = "wt-cache-v8";
+const CACHE_NAME = "wt-cache-v9";
 const ASSETS = [
   "./",
   "./index.html",
+  "./app.js",
   "./styles.css",
   "./manifest.json",
   "./icon-192.png",
@@ -72,6 +73,7 @@ self.addEventListener("fetch", (event) => {
     caches.match(req).then((cached) => cached || fetch(req))
   );
 });
+
 
 
 
