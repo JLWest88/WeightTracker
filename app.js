@@ -5,6 +5,7 @@ const weightInput = document.getElementById("weightInput");
 const notesInput = document.getElementById("notesInput");
 const addBtn = document.getElementById("addBtn");
 const clearBtn = document.getElementById("clearBtn");
+const cancelBtn = document.getElementById("cancelBtn");
 
 const latestDateEl = document.getElementById("latestDate");
 const latestWeightEl = document.getElementById("latestWeight");
@@ -66,6 +67,21 @@ function startEdit(id) {
   if (!entry) return;
 
   editingId = id;
+
+  function enterEditMode(); weightInput.focus(); {
+  addBtn.textContent = "Update entry";
+  cancelBtn.style.display = "inline-block";
+}
+
+function exitEditMode() {
+  editingId = null;
+  addBtn.textContent = "Add entry";
+  cancelBtn.style.display = "none";
+
+  weightInput.value = "";
+  notesInput.value = "";
+  dateInput.value = todayISO();
+}
 
   // Populate the form inputs
   dateInput.value = entry.date;
@@ -306,5 +322,12 @@ clearBtn.addEventListener("click", () => {
 // Init
 dateInput.value = todayISO();
 render();
+
+// Cancel edit
+cancelBtn.addEventListener("click", () => {
+  exitEditMode();
+});
+
+
 
 
