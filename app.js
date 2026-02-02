@@ -34,16 +34,10 @@ function formatISO(iso) {
   const d = isoToDate(iso);
   return d.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
 }
-function daysBetween(a, b) {
-  // whole-day difference between Date objects
-  const ms = 24 * 60 * 60 * 1000;
-  const ua = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
-  const ub = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
-  return Math.floor((ub - ua) / ms);
-}
 function round1(x) {
   return Math.round(x * 10) / 10;
 }
+
 function loadEntries() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -52,7 +46,10 @@ function loadEntries() {
     if (!Array.isArray(arr)) return [];
     return arr
       .filter(e => e && typeof e.date === "string" && typeof e.weight === "number")
-      .map(e => ({ ...e, notes: typeof e.notes === "string" ? e.notes : "" }));
+      .map(e => ({
+        ...e,
+        notes: typeof e.notes === "string" ? e.notes : ""
+      }));
   } catch {
     return [];
   }
@@ -61,18 +58,11 @@ function saveEntries(entries) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
 }
 
-function startEdit(id) {
-  const entries = loadEntries();
-  const entry = entries.find(e => e.id === id);
-  if (!entry) return;
-
-  editingId = id;
-
-  function enterEditMode(); weightInput.focus(); {
+// Edit mode helpers
+function enterEditMode() {
   addBtn.textContent = "Update entry";
   cancelBtn.style.display = "inline-block";
 }
-
 function exitEditMode() {
   editingId = null;
   addBtn.textContent = "Add entry";
@@ -83,18 +73,21 @@ function exitEditMode() {
   dateInput.value = todayISO();
 }
 
+function startEdit(id) {
+  const entries = loadEntries();
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+
+  editingId = id;
+
   // Populate the form inputs
   dateInput.value = entry.date;
   weightInput.value = String(entry.weight);
   notesInput.value = entry.notes || "";
 
-  // Change button label so user knows they're updating
-  addBtn.textContent = "Update";
-
-  // Helpful on phone
+  enterEditMode();
   weightInput.focus();
 }
-
 
 // Core: compute metrics relative to latest logged date
 function computeMetrics(entries) {
@@ -140,7 +133,7 @@ function computeMetrics(entries) {
 
   const weeklyChange = (ma7 != null && ma7PriorWeek != null) ? (ma7 - ma7PriorWeek) : null;
 
-  // Counts (helpful to sanity-check)
+  // Counts
   function countInWindow(endDate, windowDays) {
     const start = new Date(endDate);
     start.setDate(start.getDate() - (windowDays - 1));
@@ -180,44 +173,39 @@ function render() {
       const row = document.createElement("div");
       row.className = "item";
       row.innerHTML = `
-  <div class="d">${formatISO(e.date)}</div>
-  <div>
-    <div class="w">${round1(e.weight).toFixed(1)}</div>
-    <div class="n">${(e.notes || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</div>
-  </div>
-  <button data-edit-id="${e.id}" aria-label="Edit">Edit</button>
-  <button data-id="${e.id}" aria-label="Delete">Delete</button>
-`;
-
+        <div class="d">${formatISO(e.date)}</div>
+        <div>
+          <div class="w">${round1(e.weight).toFixed(1)}</div>
+          <div class="n">${(e.notes || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</div>
+        </div>
+        <button data-edit-id="${e.id}" aria-label="Edit">Edit</button>
+        <button data-id="${e.id}" aria-label="Delete">Delete</button>
+      `;
       entriesList.appendChild(row);
     }
   }
 
-  // Edit handlers
-entriesList.querySelectorAll("button[data-edit-id]").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const id = btn.getAttribute("data-edit-id");
-    startEdit(id);
+  // Edit handlers (must be inside render because rows are rebuilt)
+  entriesList.querySelectorAll("button[data-edit-id]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-edit-id");
+      startEdit(id);
+    });
   });
-});
 
-  // Delete handlers
+  // Delete handlers (also inside render)
   entriesList.querySelectorAll("button[data-id]").forEach(btn => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-id");
+
+      // If deleting the entry currently being edited, cancel edit mode
+      if (editingId === id) {
+        exitEditMode();
+      }
+
       const next = loadEntries().filter(e => e.id !== id);
-
-if (editingId === id) {
-  editingId = null;
-  addBtn.textContent = "Add";
-  weightInput.value = "";
-  notesInput.value = "";
-  dateInput.value = todayISO();
-}
-
-saveEntries(next);
-render();
-
+      saveEntries(next);
+      render();
     });
   });
 
@@ -252,7 +240,7 @@ render();
   entryStats.textContent = `Entries in last 7 days: ${m.n7} • last 14 days: ${m.n14} • Weekly change needs ~14 days of data.`;
 }
 
-// Add or Update entry
+// Add or Update entry (wired once, globally)
 addBtn.addEventListener("click", () => {
   const date = dateInput.value || todayISO();
   const w = Number(weightInput.value);
@@ -263,10 +251,12 @@ addBtn.addEventListener("click", () => {
   const entries = loadEntries();
 
   if (editingId) {
-    // UPDATE existing entry
+    // UPDATE
     const idx = entries.findIndex(e => e.id === editingId);
-    if (idx === -1) {
-      // If somehow missing, fall back to add
+    if (idx !== -1) {
+      entries[idx] = { ...entries[idx], date, weight: w, notes };
+    } else {
+      // fallback add
       entries.push({
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2),
         date,
@@ -274,15 +264,10 @@ addBtn.addEventListener("click", () => {
         notes,
         createdAt: Date.now()
       });
-    } else {
-      // Preserve createdAt so ordering stays sensible
-      entries[idx] = { ...entries[idx], date, weight: w, notes };
     }
-
-    editingId = null;
-    addBtn.textContent = "Add";
+    exitEditMode();
   } else {
-    // ADD new entry
+    // ADD
     entries.push({
       id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2),
       date,
@@ -290,44 +275,32 @@ addBtn.addEventListener("click", () => {
       notes,
       createdAt: Date.now()
     });
+
+    // reset weight + notes for convenience; keep date on today
+    weightInput.value = "";
+    notesInput.value = "";
+    dateInput.value = todayISO();
   }
 
   saveEntries(entries);
-
-  // reset weight + notes for convenience; keep date on today
-  weightInput.value = "";
-  notesInput.value = "";
-  dateInput.value = todayISO();
-
   render();
 });
 
-
-  // reset weight + notes for convenience; keep date on today
-  weightInput.value = "";
-  notesInput.value = "";
-  dateInput.value = todayISO();
-
-  render();
-});
-
-// Clear all
+// Clear all (wired once)
 clearBtn.addEventListener("click", () => {
   const ok = confirm("Clear ALL entries stored on this device?");
   if (!ok) return;
   localStorage.removeItem(STORAGE_KEY);
+  exitEditMode();
   render();
+});
+
+// Cancel edit (wired once)
+cancelBtn.addEventListener("click", () => {
+  exitEditMode();
 });
 
 // Init
 dateInput.value = todayISO();
 render();
-
-// Cancel edit
-cancelBtn.addEventListener("click", () => {
-  exitEditMode();
-});
-
-
-
-
+exitEditMode();
