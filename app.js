@@ -60,6 +60,26 @@ function saveEntries(entries) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
 }
 
+function startEdit(id) {
+  const entries = loadEntries();
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+
+  editingId = id;
+
+  // Populate the form inputs
+  dateInput.value = entry.date;
+  weightInput.value = String(entry.weight);
+  notesInput.value = entry.notes || "";
+
+  // Change button label so user knows they're updating
+  addBtn.textContent = "Update";
+
+  // Helpful on phone
+  weightInput.focus();
+}
+
+
 // Core: compute metrics relative to latest logged date
 function computeMetrics(entries) {
   if (entries.length === 0) return null;
@@ -144,24 +164,44 @@ function render() {
       const row = document.createElement("div");
       row.className = "item";
       row.innerHTML = `
-        <div class="d">${formatISO(e.date)}</div>
-        <div>
-          <div class="w">${round1(e.weight).toFixed(1)}</div>
-          <div class="n">${(e.notes || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</div>
-        </div>
-        <button data-id="${e.id}" aria-label="Delete">Delete</button>
-      `;
+  <div class="d">${formatISO(e.date)}</div>
+  <div>
+    <div class="w">${round1(e.weight).toFixed(1)}</div>
+    <div class="n">${(e.notes || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</div>
+  </div>
+  <button data-edit-id="${e.id}" aria-label="Edit">Edit</button>
+  <button data-id="${e.id}" aria-label="Delete">Delete</button>
+`;
+
       entriesList.appendChild(row);
     }
   }
+
+  // Edit handlers
+entriesList.querySelectorAll("button[data-edit-id]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const id = btn.getAttribute("data-edit-id");
+    startEdit(id);
+  });
+});
 
   // Delete handlers
   entriesList.querySelectorAll("button[data-id]").forEach(btn => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-id");
       const next = loadEntries().filter(e => e.id !== id);
-      saveEntries(next);
-      render();
+
+if (editingId === id) {
+  editingId = null;
+  addBtn.textContent = "Add";
+  weightInput.value = "";
+  notesInput.value = "";
+  dateInput.value = todayISO();
+}
+
+saveEntries(next);
+render();
+
     });
   });
 
@@ -196,7 +236,7 @@ function render() {
   entryStats.textContent = `Entries in last 7 days: ${m.n7} • last 14 days: ${m.n14} • Weekly change needs ~14 days of data.`;
 }
 
-// Add entry
+// Add or Update entry
 addBtn.addEventListener("click", () => {
   const date = dateInput.value || todayISO();
   const w = Number(weightInput.value);
@@ -204,16 +244,48 @@ addBtn.addEventListener("click", () => {
   if (!Number.isFinite(w) || w <= 0) return alert("Enter a valid weight (> 0).");
 
   const notes = (notesInput.value || "").trim();
-
   const entries = loadEntries();
-  entries.push({
-    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2),
-    date,
-    weight: w,
-    notes,
-    createdAt: Date.now()
-  });
+
+  if (editingId) {
+    // UPDATE existing entry
+    const idx = entries.findIndex(e => e.id === editingId);
+    if (idx === -1) {
+      // If somehow missing, fall back to add
+      entries.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2),
+        date,
+        weight: w,
+        notes,
+        createdAt: Date.now()
+      });
+    } else {
+      // Preserve createdAt so ordering stays sensible
+      entries[idx] = { ...entries[idx], date, weight: w, notes };
+    }
+
+    editingId = null;
+    addBtn.textContent = "Add";
+  } else {
+    // ADD new entry
+    entries.push({
+      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2),
+      date,
+      weight: w,
+      notes,
+      createdAt: Date.now()
+    });
+  }
+
   saveEntries(entries);
+
+  // reset weight + notes for convenience; keep date on today
+  weightInput.value = "";
+  notesInput.value = "";
+  dateInput.value = todayISO();
+
+  render();
+});
+
 
   // reset weight + notes for convenience; keep date on today
   weightInput.value = "";
@@ -234,4 +306,5 @@ clearBtn.addEventListener("click", () => {
 // Init
 dateInput.value = todayISO();
 render();
+
 
