@@ -9,12 +9,28 @@ const cancelBtn = document.getElementById("cancelBtn");
 
 const latestDateEl = document.getElementById("latestDate");
 const latestWeightEl = document.getElementById("latestWeight");
+
+// Existing (current) MA displays
 const ma7El = document.getElementById("ma7");
 const ma14El = document.getElementById("ma14");
 const ma28El = document.getElementById("ma28");
+
+// Existing weekly change display (we keep it as the MA7 delta)
 const weeklyChangeEl = document.getElementById("weeklyChange");
+
 const entriesList = document.getElementById("entriesList");
 const entryStats = document.getElementById("entryStats");
+
+// Optional (new) elements, if you add them to index.html later.
+// If they don't exist, the app will still work and will simply not render these fields.
+const ma7PrevEl = document.getElementById("ma7Prev");
+const ma7DeltaEl = document.getElementById("ma7Delta");
+
+const ma14PrevEl = document.getElementById("ma14Prev");
+const ma14DeltaEl = document.getElementById("ma14Delta");
+
+const ma28PrevEl = document.getElementById("ma28Prev");
+const ma28DeltaEl = document.getElementById("ma28Delta");
 
 let editingId = null;
 
@@ -26,16 +42,30 @@ function todayISO() {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
+
+// Use local-noon dates for calculations to avoid DST edge weirdness.
 function isoToDate(iso) {
   const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d);
+  return new Date(y, m - 1, d, 12, 0, 0, 0);
 }
+
 function formatISO(iso) {
   const d = isoToDate(iso);
   return d.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
 }
+
 function round1(x) {
   return Math.round(x * 10) / 10;
+}
+
+function addDays(dateObj, days) {
+  const d = new Date(dateObj);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function escapeHtml(s) {
+  return String(s || "").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 function loadEntries() {
@@ -54,6 +84,7 @@ function loadEntries() {
     return [];
   }
 }
+
 function saveEntries(entries) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
 }
@@ -81,6 +112,7 @@ function enterEditMode() {
   addBtn.textContent = "Update entry";
   cancelBtn.style.display = "inline-block";
 }
+
 function exitEditMode() {
   editingId = null;
   addBtn.textContent = "Add entry";
@@ -98,7 +130,6 @@ function startEdit(id) {
 
   editingId = id;
 
-  // Populate the form inputs
   dateInput.value = entry.date;
   weightInput.value = String(entry.weight);
   notesInput.value = entry.notes || "";
@@ -107,71 +138,105 @@ function startEdit(id) {
   weightInput.focus();
 }
 
-// Core: compute metrics relative to latest logged date
+/**
+ * Calendar-windowed trailing stats (missing calendar days are simply absent; we average only existing entries in the window).
+ * Window definition:
+ *   - Current N-day window ends at endDate (inclusive) and begins at endDate-(N-1) (inclusive).
+ *   - Prior N-day window ends at endDate-N (inclusive) and begins at endDate-(2N-1) (inclusive).
+ *
+ * This makes MA(N) truly "last N calendar days" (relative to latest logged date), not "last N entries."
+ */
 function computeMetrics(entries) {
   if (entries.length === 0) return null;
 
-  // Sort by date asc, then by createdAt asc
+  // Sort by date asc, then by createdAt asc (stable within same day)
   const sorted = [...entries].sort((a, b) => {
     if (a.date !== b.date) return a.date.localeCompare(b.date);
     return (a.createdAt || 0) - (b.createdAt || 0);
   });
 
-  // Latest date = max date
+  // Latest date = max date present in entries
   const latestDateISO = sorted[sorted.length - 1].date;
   const latestDate = isoToDate(latestDateISO);
 
   // Latest weight = last entry on that latest date
   const latestWeight = [...sorted].reverse().find(e => e.date === latestDateISO)?.weight ?? null;
 
-  // Helper: entries within [start, end] by date
-  function avgInWindow(endDate, windowDays) {
-    const start = new Date(endDate);
-    start.setDate(start.getDate() - (windowDays - 1));
-    const vals = sorted
-      .filter(e => {
-        const d = isoToDate(e.date);
-        return d >= start && d <= endDate;
-      })
-      .map(e => e.weight);
+  // Helper: stats within [start, end] inclusive by calendar date.
+  function windowStats(endDate, windowDays) {
+    const start = addDays(endDate, -(windowDays - 1));
 
-    if (vals.length === 0) return null;
-    const sum = vals.reduce((a, b) => a + b, 0);
-    return sum / vals.length;
-  }
-
-  const ma7 = avgInWindow(latestDate, 7);
-  const ma14 = avgInWindow(latestDate, 14);
-  const ma28 = avgInWindow(latestDate, 28);
-
-  // Prior-week MA7 window ends 7 days before latestDate
-  const priorEnd = new Date(latestDate);
-  priorEnd.setDate(priorEnd.getDate() - 7);
-  const ma7PriorWeek = avgInWindow(priorEnd, 7);
-
-  const weeklyChange = (ma7 != null && ma7PriorWeek != null) ? (ma7 - ma7PriorWeek) : null;
-
-  // Counts
-  function countInWindow(endDate, windowDays) {
-    const start = new Date(endDate);
-    start.setDate(start.getDate() - (windowDays - 1));
-    return sorted.filter(e => {
+    const vals = [];
+    for (const e of sorted) {
       const d = isoToDate(e.date);
-      return d >= start && d <= endDate;
-    }).length;
+      if (d >= start && d <= endDate) vals.push(e.weight);
+    }
+
+    if (vals.length === 0) {
+      return { avg: null, count: 0, windowDays };
+    }
+
+    const sum = vals.reduce((a, b) => a + b, 0);
+    return { avg: sum / vals.length, count: vals.length, windowDays };
   }
 
-  const n7 = countInWindow(latestDate, 7);
-  const n14 = countInWindow(latestDate, 14);
+  function currentAndPrior(endDate, windowDays) {
+    const current = windowStats(endDate, windowDays);
+    const priorEnd = addDays(endDate, -windowDays);
+    const prior = windowStats(priorEnd, windowDays);
+
+    const delta =
+      (current.avg != null && prior.avg != null)
+        ? (current.avg - prior.avg)
+        : null;
+
+    return { current, prior, delta };
+  }
+
+  const w7 = currentAndPrior(latestDate, 7);
+  const w14 = currentAndPrior(latestDate, 14);
+  const w28 = currentAndPrior(latestDate, 28);
 
   return {
     latestDateISO,
     latestWeight,
-    ma7, ma14, ma28,
-    ma7PriorWeek,
-    weeklyChange,
-    n7, n14
+
+    // 7-day
+    ma7: w7.current.avg,
+    ma7Count: w7.current.count,
+    ma7Prior: w7.prior.avg,
+    ma7PriorCount: w7.prior.count,
+    weeklyChange: w7.delta, // kept for existing UI element
+
+    // 14-day
+    ma14: w14.current.avg,
+    ma14Count: w14.current.count,
+    ma14Prior: w14.prior.avg,
+    ma14PriorCount: w14.prior.count,
+    change14: w14.delta,
+
+    // 28-day
+    ma28: w28.current.avg,
+    ma28Count: w28.current.count,
+    ma28Prior: w28.prior.avg,
+    ma28PriorCount: w28.prior.count,
+    change28: w28.delta
   };
+}
+
+function formatMaybeNumber(x) {
+  return (x == null) ? "—" : round1(x).toFixed(1);
+}
+
+function formatDelta(x) {
+  if (x == null) return "—";
+  const val = round1(x);
+  const sign = val > 0 ? "+" : "";
+  return `${sign}${val.toFixed(1)}`;
+}
+
+function setTextIfEl(el, text) {
+  if (el) el.textContent = text;
 }
 
 function render() {
@@ -194,7 +259,7 @@ function render() {
         <div class="d">${formatISO(e.date)}</div>
         <div>
           <div class="w">${round1(e.weight).toFixed(1)}</div>
-          <div class="n">${(e.notes || "").replaceAll("<","&lt;").replaceAll(">","&gt;")}</div>
+          <div class="n">${escapeHtml(e.notes || "")}</div>
         </div>
         <button data-edit-id="${e.id}" aria-label="Edit">Edit</button>
         <button data-id="${e.id}" aria-label="Delete">Delete</button>
@@ -203,7 +268,7 @@ function render() {
     }
   }
 
-  // Edit handlers (must be inside render because rows are rebuilt)
+  // Edit handlers
   entriesList.querySelectorAll("button[data-edit-id]").forEach(btn => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-edit-id");
@@ -211,7 +276,7 @@ function render() {
     });
   });
 
-  // Delete handlers (also inside render)
+  // Delete handlers
   entriesList.querySelectorAll("button[data-id]").forEach(btn => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-id");
@@ -237,31 +302,55 @@ function render() {
     ma28El.textContent = "—";
     weeklyChangeEl.textContent = "—";
     entryStats.textContent = "—";
+
+    // Optional fields
+    setTextIfEl(ma7PrevEl, "—");
+    setTextIfEl(ma7DeltaEl, "—");
+    setTextIfEl(ma14PrevEl, "—");
+    setTextIfEl(ma14DeltaEl, "—");
+    setTextIfEl(ma28PrevEl, "—");
+    setTextIfEl(ma28DeltaEl, "—");
     return;
   }
 
   latestDateEl.textContent = formatISO(m.latestDateISO);
   latestWeightEl.textContent = (m.latestWeight == null) ? "—" : round1(m.latestWeight).toFixed(1);
 
-  ma7El.textContent = (m.ma7 == null) ? "—" : round1(m.ma7).toFixed(1);
-  ma14El.textContent = (m.ma14 == null) ? "—" : round1(m.ma14).toFixed(1);
-  ma28El.textContent = (m.ma28 == null) ? "—" : round1(m.ma28).toFixed(1);
+  // Current MAs (existing UI)
+  ma7El.textContent = formatMaybeNumber(m.ma7);
+  ma14El.textContent = formatMaybeNumber(m.ma14);
+  ma28El.textContent = formatMaybeNumber(m.ma28);
 
-  if (m.weeklyChange == null) {
-    weeklyChangeEl.textContent = "—";
-  } else {
-    const val = round1(m.weeklyChange);
-    const sign = val > 0 ? "+" : "";
-    weeklyChangeEl.textContent = `${sign}${val.toFixed(1)}`;
-  }
+  // Weekly change (existing UI) = MA7(current) - MA7(prior 7-day window)
+  weeklyChangeEl.textContent = formatDelta(m.weeklyChange);
 
-  entryStats.textContent = `Entries in last 7 days: ${m.n7} • last 14 days: ${m.n14} • Weekly change needs ~14 days of data.`;
+  // Optional: show prior + delta for each window if elements exist
+  setTextIfEl(ma7PrevEl, formatMaybeNumber(m.ma7Prior));
+  setTextIfEl(ma7DeltaEl, formatDelta(m.weeklyChange));
+
+  setTextIfEl(ma14PrevEl, formatMaybeNumber(m.ma14Prior));
+  setTextIfEl(ma14DeltaEl, formatDelta(m.change14));
+
+  setTextIfEl(ma28PrevEl, formatMaybeNumber(m.ma28Prior));
+  setTextIfEl(ma28DeltaEl, formatDelta(m.change28));
+
+  // Stats / transparency
+  // (These counts are "entries logged within the calendar window", not "days".)
+  const parts = [];
+  parts.push(`MA7: ${m.ma7Count}/7 entries logged`);
+  parts.push(`Prior MA7: ${m.ma7PriorCount}/7`);
+  parts.push(`MA14: ${m.ma14Count}/14`);
+  parts.push(`Prior MA14: ${m.ma14PriorCount}/14`);
+  parts.push(`MA28: ${m.ma28Count}/28`);
+  parts.push(`Prior MA28: ${m.ma28PriorCount}/28`);
+  entryStats.textContent = parts.join(" • ");
 }
 
 // Add or Update entry (wired once, globally)
 addBtn.addEventListener("click", () => {
   const date = dateInput.value || todayISO();
   const w = Number(weightInput.value);
+
   if (!date) return alert("Pick a date.");
   if (!Number.isFinite(w) || w <= 0) return alert("Enter a valid weight (> 0).");
 
@@ -272,6 +361,7 @@ addBtn.addEventListener("click", () => {
     // UPDATE
     const idx = entries.findIndex(e => e.id === editingId);
     if (idx !== -1) {
+      // Preserve createdAt for stable ordering within the same day
       entries[idx] = { ...entries[idx], date, weight: w, notes };
     } else {
       // fallback add
@@ -322,4 +412,3 @@ cancelBtn.addEventListener("click", () => {
 dateInput.value = todayISO();
 render();
 exitEditMode();
-
