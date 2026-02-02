@@ -58,6 +58,24 @@ function saveEntries(entries) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
 }
 
+function ensureIds(entries) {
+  let changed = false;
+
+  for (const e of entries) {
+    if (!e.id) {
+      e.id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+      changed = true;
+    }
+    if (typeof e.createdAt !== "number") {
+      e.createdAt = Date.now();
+      changed = true;
+    }
+  }
+
+  if (changed) saveEntries(entries);
+  return entries;
+}
+
 // Edit mode helpers
 function enterEditMode() {
   addBtn.textContent = "Update entry";
@@ -157,7 +175,7 @@ function computeMetrics(entries) {
 }
 
 function render() {
-  const entries = loadEntries();
+  const entries = ensureIds(loadEntries());
 
   // Sort newest-first for display
   const display = [...entries].sort((a, b) => {
@@ -304,3 +322,4 @@ cancelBtn.addEventListener("click", () => {
 dateInput.value = todayISO();
 render();
 exitEditMode();
+
