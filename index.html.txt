@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#111827" />
+    <title>Weight Tracker</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Weight Tracker</h1>
+        <p class="sub">Trailing averages (no calendar resets) + weekly baseline change.</p>
+      </div>
+      <div class="pill" id="installHint" hidden>Tip: Add to Home Screen</div>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <h2>Quick Add</h2>
+        <div class="row">
+          <label>
+            Date
+            <input id="dateInput" type="date" />
+          </label>
+          <label>
+            Weight
+            <input id="weightInput" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 179.6" />
+          </label>
+          <label>
+            Notes (optional)
+            <input id="notesInput" type="text" placeholder="e.g. salty dinner" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="addBtn" class="primary">Add entry</button>
+          <button id="clearBtn" class="ghost" title="Clears all local data">Clear all</button>
+        </div>
+        <p class="tiny muted">
+          Data is stored locally on this device (offline). Missed days are ignored (no zero-fill).
+        </p>
+      </section>
+
+      <section class="grid">
+        <div class="card metric">
+          <div class="label">Latest date</div>
+          <div class="value" id="latestDate">—</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Latest weight</div>
+          <div class="value" id="latestWeight">—</div>
+        </div>
+        <div class="card metric">
+          <div class="label">MA7</div>
+          <div class="value" id="ma7">—</div>
+          <div class="tiny muted">7-day trailing average</div>
+        </div>
+        <div class="card metric">
+          <div class="label">MA14</div>
+          <div class="value" id="ma14">—</div>
+          <div class="tiny muted">14-day trailing average</div>
+        </div>
+        <div class="card metric">
+          <div class="label">MA28</div>
+          <div class="value" id="ma28">—</div>
+          <div class="tiny muted">28-day trailing average</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Weekly change</div>
+          <div class="value" id="weeklyChange">—</div>
+          <div class="tiny muted">MA7(today) − MA7(7 days ago)</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Entries</h2>
+        <div class="tiny muted" id="entryStats">—</div>
+        <div class="list" id="entriesList"></div>
+      </section>
+
+      <section class="card">
+        <h2>How the math works</h2>
+        <ul class="tiny">
+          <li><b>MA7</b>: average of entries dated within 6 days before your latest logged date through the latest logged date.</li>
+          <li><b>Weekly change</b>: MA7(latest) minus MA7(ending 7 days earlier). Updates daily, no calendar reset.</li>
+          <li>If you skip a day, it’s simply not counted (no zeros inserted).</li>
+        </ul>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
+      }
+    </script>
+  </body>
+</html>
