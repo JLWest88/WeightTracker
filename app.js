@@ -15,6 +15,8 @@ const weeklyChangeEl = document.getElementById("weeklyChange");
 const entriesList = document.getElementById("entriesList");
 const entryStats = document.getElementById("entryStats");
 
+let editingId = null;
+
 // Utilities
 function todayISO() {
   const d = new Date();
@@ -232,3 +234,4 @@ clearBtn.addEventListener("click", () => {
 // Init
 dateInput.value = todayISO();
 render();
+
