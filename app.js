@@ -1,4 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
+const APP_VERSION = "2026-02-02.6";
+const appVersionEl = document.getElementById("appVersion");
+if (appVersionEl) appVersionEl.textContent = APP_VERSION;
 
 const dateInput = document.getElementById("dateInput");
 const weightInput = document.getElementById("weightInput");
@@ -376,3 +379,4 @@ cancelBtn.addEventListener("click", () => {
 dateInput.value = todayISO();
 render();
 exitEditMode();
+
