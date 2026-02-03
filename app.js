@@ -15,14 +15,12 @@ const ma7El = document.getElementById("ma7");
 const ma14El = document.getElementById("ma14");
 const ma28El = document.getElementById("ma28");
 
-// Existing weekly change display (we keep it as the MA7 delta)
+// Weekly change element may NOT exist now (Option A). Keep it safe.
 const weeklyChangeEl = document.getElementById("weeklyChange");
 
 const entriesList = document.getElementById("entriesList");
 const entryStats = document.getElementById("entryStats");
 
-// Optional (new) elements, if you add them to index.html later.
-// If they don't exist, the app will still work and will simply not render these fields.
 const ma7PrevEl = document.getElementById("ma7Prev");
 const ma7DeltaEl = document.getElementById("ma7Delta");
 
@@ -138,31 +136,19 @@ function startEdit(id) {
   weightInput.focus();
 }
 
-/**
- * Calendar-windowed trailing stats (missing calendar days are simply absent; we average only existing entries in the window).
- * Window definition:
- *   - Current N-day window ends at endDate (inclusive) and begins at endDate-(N-1) (inclusive).
- *   - Prior N-day window ends at endDate-N (inclusive) and begins at endDate-(2N-1) (inclusive).
- *
- * This makes MA(N) truly "last N calendar days" (relative to latest logged date), not "last N entries."
- */
 function computeMetrics(entries) {
   if (entries.length === 0) return null;
 
-  // Sort by date asc, then by createdAt asc (stable within same day)
   const sorted = [...entries].sort((a, b) => {
     if (a.date !== b.date) return a.date.localeCompare(b.date);
     return (a.createdAt || 0) - (b.createdAt || 0);
   });
 
-  // Latest date = max date present in entries
   const latestDateISO = sorted[sorted.length - 1].date;
   const latestDate = isoToDate(latestDateISO);
 
-  // Latest weight = last entry on that latest date
   const latestWeight = [...sorted].reverse().find(e => e.date === latestDateISO)?.weight ?? null;
 
-  // Helper: stats within [start, end] inclusive by calendar date.
   function windowStats(endDate, windowDays) {
     const start = addDays(endDate, -(windowDays - 1));
 
@@ -201,21 +187,18 @@ function computeMetrics(entries) {
     latestDateISO,
     latestWeight,
 
-    // 7-day
     ma7: w7.current.avg,
     ma7Count: w7.current.count,
     ma7Prior: w7.prior.avg,
     ma7PriorCount: w7.prior.count,
-    weeklyChange: w7.delta, // kept for existing UI element
+    weeklyChange: w7.delta,
 
-    // 14-day
     ma14: w14.current.avg,
     ma14Count: w14.current.count,
     ma14Prior: w14.prior.avg,
     ma14PriorCount: w14.prior.count,
     change14: w14.delta,
 
-    // 28-day
     ma28: w28.current.avg,
     ma28Count: w28.current.count,
     ma28Prior: w28.prior.avg,
@@ -242,7 +225,6 @@ function setTextIfEl(el, text) {
 function render() {
   const entries = ensureIds(loadEntries());
 
-  // Sort newest-first for display
   const display = [...entries].sort((a, b) => {
     if (a.date !== b.date) return b.date.localeCompare(a.date);
     return (b.createdAt || 0) - (a.createdAt || 0);
@@ -268,7 +250,6 @@ function render() {
     }
   }
 
-  // Edit handlers
   entriesList.querySelectorAll("button[data-edit-id]").forEach(btn => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-edit-id");
@@ -276,12 +257,10 @@ function render() {
     });
   });
 
-  // Delete handlers
   entriesList.querySelectorAll("button[data-id]").forEach(btn => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-id");
 
-      // If deleting the entry currently being edited, cancel edit mode
       if (editingId === id) {
         exitEditMode();
       }
@@ -292,7 +271,6 @@ function render() {
     });
   });
 
-  // Metrics
   const m = computeMetrics(entries);
   if (!m) {
     latestDateEl.textContent = "—";
@@ -300,10 +278,9 @@ function render() {
     ma7El.textContent = "—";
     ma14El.textContent = "—";
     ma28El.textContent = "—";
-    weeklyChangeEl.textContent = "—";
+    setTextIfEl(weeklyChangeEl, "—");
     entryStats.textContent = "—";
 
-    // Optional fields
     setTextIfEl(ma7PrevEl, "—");
     setTextIfEl(ma7DeltaEl, "—");
     setTextIfEl(ma14PrevEl, "—");
@@ -316,15 +293,13 @@ function render() {
   latestDateEl.textContent = formatISO(m.latestDateISO);
   latestWeightEl.textContent = (m.latestWeight == null) ? "—" : round1(m.latestWeight).toFixed(1);
 
-  // Current MAs (existing UI)
   ma7El.textContent = formatMaybeNumber(m.ma7);
   ma14El.textContent = formatMaybeNumber(m.ma14);
   ma28El.textContent = formatMaybeNumber(m.ma28);
 
-  // Weekly change (existing UI) = MA7(current) - MA7(prior 7-day window)
-  weeklyChangeEl.textContent = formatDelta(m.weeklyChange);
+  // Safe even if weeklyChange card is removed
+  setTextIfEl(weeklyChangeEl, formatDelta(m.weeklyChange));
 
-  // Optional: show prior + delta for each window if elements exist
   setTextIfEl(ma7PrevEl, formatMaybeNumber(m.ma7Prior));
   setTextIfEl(ma7DeltaEl, formatDelta(m.weeklyChange));
 
@@ -334,8 +309,6 @@ function render() {
   setTextIfEl(ma28PrevEl, formatMaybeNumber(m.ma28Prior));
   setTextIfEl(ma28DeltaEl, formatDelta(m.change28));
 
-  // Stats / transparency
-  // (These counts are "entries logged within the calendar window", not "days".)
   const parts = [];
   parts.push(`MA7: ${m.ma7Count}/7 entries logged`);
   parts.push(`Prior MA7: ${m.ma7PriorCount}/7`);
@@ -346,7 +319,6 @@ function render() {
   entryStats.textContent = parts.join(" • ");
 }
 
-// Add or Update entry (wired once, globally)
 addBtn.addEventListener("click", () => {
   const date = dateInput.value || todayISO();
   const w = Number(weightInput.value);
@@ -358,13 +330,10 @@ addBtn.addEventListener("click", () => {
   const entries = loadEntries();
 
   if (editingId) {
-    // UPDATE
     const idx = entries.findIndex(e => e.id === editingId);
     if (idx !== -1) {
-      // Preserve createdAt for stable ordering within the same day
       entries[idx] = { ...entries[idx], date, weight: w, notes };
     } else {
-      // fallback add
       entries.push({
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2),
         date,
@@ -375,7 +344,6 @@ addBtn.addEventListener("click", () => {
     }
     exitEditMode();
   } else {
-    // ADD
     entries.push({
       id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2),
       date,
@@ -384,7 +352,6 @@ addBtn.addEventListener("click", () => {
       createdAt: Date.now()
     });
 
-    // reset weight + notes for convenience; keep date on today
     weightInput.value = "";
     notesInput.value = "";
     dateInput.value = todayISO();
@@ -394,7 +361,6 @@ addBtn.addEventListener("click", () => {
   render();
 });
 
-// Clear all (wired once)
 clearBtn.addEventListener("click", () => {
   const ok = confirm("Clear ALL entries stored on this device?");
   if (!ok) return;
@@ -403,12 +369,10 @@ clearBtn.addEventListener("click", () => {
   render();
 });
 
-// Cancel edit (wired once)
 cancelBtn.addEventListener("click", () => {
   exitEditMode();
 });
 
-// Init
 dateInput.value = todayISO();
 render();
 exitEditMode();
