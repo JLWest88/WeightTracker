@@ -1,5 +1,5 @@
 const STORAGE_KEY = "wt_entries_v1";
-const APP_VERSION = "2026-02-02.6";
+const APP_VERSION = "2026-02-02.7";
 const appVersionEl = document.getElementById("appVersion");
 if (appVersionEl) appVersionEl.textContent = APP_VERSION;
 
@@ -379,4 +379,5 @@ cancelBtn.addEventListener("click", () => {
 dateInput.value = todayISO();
 render();
 exitEditMode();
+
 
