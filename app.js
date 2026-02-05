@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const ASOF_KEY = "wt_asof_date_v1";
-const APP_VERSION = "2026-02-04.1";
+const APP_VERSION = "2026-02-04.2";
 
 const appVersionEl = document.getElementById("appVersion");
 if (appVersionEl) appVersionEl.textContent = APP_VERSION;
@@ -22,3 +22,4 @@ const ma28El = document.getElementById("ma28");
 
 const ma7PrevEl = document.getElementById("ma7Prev");
 const ma7DeltaE
+
