@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const ASOF_KEY = "wt_asof_date_v1";
-const APP_VERSION = "2026-02-04.3";
+const APP_VERSION = "2026-02-04.4";
 
 // Version display
 const appVersionEl = document.getElementById("appVersion");
@@ -451,8 +451,9 @@ asOfDateISO = loadAsOfDate();
 if (goalInput) {
   goalInput.value = String(goalDelta7);
   goalInput.addEventListener("input", () => {
-    const v = Number(goalInput.value);
-    goalDelta7 = Number.isFinite(v) ? v : 0.0;
+    const raw = String(goalInput.value || "").trim().replace(",", ".");
+const v = Number(raw);
+goalDelta7 = Number.isFinite(v) ? v : 0.0;
     saveGoalDelta7(goalDelta7);
     render();
   });
@@ -551,3 +552,4 @@ if (cancelBtn) {
 dateInput.value = todayISO();
 exitEditMode();
 render();
+
