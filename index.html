@@ -15,13 +15,13 @@
         <p class="sub">Trailing averages (calendar-windowed) with prior-period comparison.</p> 
         <p class="sub">Version: <span id="appVersion">—</span></p>
       </div>
-      <div class="pill" id="installHint" hidden>Tip: Add to Home Screen</div>
+      <"pill" id="installHint" hidden>Tip: Add to Home Screen</div>
     </header>
 
     <main class="container">
       <section class="card">
         <h2>Quick Add</h2>
-        <div class="row">
+        <"row">
           <label>
             Date
             <input id="dateInput" type="date" />
@@ -35,7 +35,7 @@
             <input id="notesInput" type="text" placeholder="e.g. salty dinner" />
           </label>
         </div>
-        <div class="actions">
+        <"actions">
           <button id="addBtn" class="primary">Add entry</button>
           <button id="cancelBtn" class="ghost" style="display:none;">Cancel</button>
           <button id="clearBtn" class="ghost" title="Clears all local data">Clear all</button>
@@ -46,9 +46,9 @@
       </section>
 
       <section class="grid">
-        <div class="card metric">
-          <div class="label">Latest date</div>
-          <div class="value" id="latestDate">—</div>
+        <"card metric">
+          <"label">Latest date</div>
+          <"value" id="latestDate">—</div>
         </div>
 
         <div class="card metric">
@@ -82,12 +82,12 @@
           <div class="tiny muted">Current (last 7 calendar days)</div>
           <div class="tiny muted">Prior: <span id="ma7Prev">—</span></div>
           <div class="tiny muted">Δ: <span id="ma7Delta">—</span></div>
-          <div class="row" style="margin-top:10px; gap:10px; align-items:end;">
+<div class="row" style="margin-top:10px; gap:10px; align-items:end; flex-wrap:wrap;">
             <label style="flex:1;">
               Goal Δ7
               <input id="goalDelta7" type="text" inputmode="decimal" placeholder="e.g. -1.0" value="0.0" />
             </label>
-            <div style="min-width:140px;">
+            <div style="min-width:120px;">
               <div class="tiny muted">Req next-7 avg</div>
               <div class="value" id="reqNext7Avg">—</div>
             </div>
@@ -143,6 +143,7 @@
     <script src="app.js?v=20260204.4"></script>
      </body>
 </html>
+
 
 
 
