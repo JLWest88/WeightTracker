@@ -160,5 +160,73 @@ select{
   border-color: rgba(96,165,250,.22);
   box-shadow: 0 12px 30px rgba(0,0,0,.25), 0 0 0 1px rgba(96,165,250,.08) inset;
 }
+/* ---- UI POLISH PATCH (Plan hero + control-strip feel + mobile overflow) ---- */
+
+/* Make the "Latest" strip feel like a quick status row under Quick Add */
+.grid[aria-label="Latest"] .metric .value{
+  font-size:20px; /* slightly smaller than MA cards so it doesn't compete */
+}
+
+/* Make the Plan hero metric pop */
+.planHero .label{
+  font-size:12px;
+  color:var(--muted);
+  margin-bottom:6px;
+}
+.planHero .value{
+  font-size:34px;
+  font-weight:900;
+  letter-spacing:.3px;
+  line-height:1.05;
+}
+@media(min-width:760px){
+  .planHero .value{font-size:40px;}
+}
+
+/* Treat the View As-of (B) card as a control strip: a bit tighter + less "metric" */
+#asOfDateDisplay{
+  font-size:18px;
+  font-weight:800;
+  letter-spacing:.2px;
+}
+section.card .controlsRow{
+  align-items:end;
+}
+section.card .controlsRow label{
+  gap:6px;
+}
+
+/* MA range line should be clearly subordinate but readable */
+#ma7Range, #ma14Range, #ma28Range{
+  margin-top:2px;
+  color:var(--muted);
+  font-size:12px;
+}
+
+/* Keep item rows from overflowing on very narrow screens */
+@media(max-width:420px){
+  .item{
+    grid-template-columns: 92px 1fr auto;
+    gap:8px;
+  }
+  .metric .value{
+    font-size:20px; /* reduce a hair on tiny screens */
+  }
+  .planHero .value{
+    font-size:30px;
+  }
+}
+
+/* Make buttons in list a bit less dominant */
+.item button{
+  padding:7px 9px;
+  font-weight:700;
+}
+
+/* Slightly reduce vertical spacing inside metric cards so added lines don't feel cramped */
+.metric .tiny{
+  line-height:1.25;
+}
+
 
 
