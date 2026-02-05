@@ -12,16 +12,16 @@
     <header class="topbar">
       <div>
         <h1>Weight Tracker</h1>
-        <p class="sub">Trailing averages (calendar-windowed) with prior-period comparison.</p> 
+        <p class="sub">Trailing averages (calendar-windowed) with prior-period comparison.</p>
         <p class="sub">Version: <span id="appVersion">—</span></p>
       </div>
-      <"pill" id="installHint" hidden>Tip: Add to Home Screen</div>
+      <div class="pill" id="installHint" hidden>Tip: Add to Home Screen</div>
     </header>
 
     <main class="container">
       <section class="card">
         <h2>Quick Add</h2>
-        <"row">
+        <div class="row">
           <label>
             Date
             <input id="dateInput" type="date" />
@@ -35,7 +35,7 @@
             <input id="notesInput" type="text" placeholder="e.g. salty dinner" />
           </label>
         </div>
-        <"actions">
+        <div class="actions">
           <button id="addBtn" class="primary">Add entry</button>
           <button id="cancelBtn" class="ghost" style="display:none;">Cancel</button>
           <button id="clearBtn" class="ghost" title="Clears all local data">Clear all</button>
@@ -46,9 +46,9 @@
       </section>
 
       <section class="grid">
-        <"card metric">
-          <"label">Latest date</div>
-          <"value" id="latestDate">—</div>
+        <div class="card metric">
+          <div class="label">Latest date</div>
+          <div class="value" id="latestDate">—</div>
         </div>
 
         <div class="card metric">
@@ -56,16 +56,17 @@
           <div class="value" id="latestWeight">—</div>
         </div>
 
-          <div class="card metric">
+        <!-- AS-OF CARD -->
+        <div class="card metric">
           <div class="label">As-of date</div>
           <div class="value" id="asOfDateDisplay">—</div>
 
           <div class="row" style="margin-top:10px; gap:8px; align-items:end;">
             <button id="asOfPrev" class="ghost" type="button" title="Previous entry date">◀</button>
 
-            <label style="flex:1;">
+            <label style="flex:1; min-width:0;">
               Jump
-              <select id="asOfSelect"></select>
+              <select id="asOfSelect" style="width:100%; max-width:100%;"></select>
             </label>
 
             <button id="asOfNext" class="ghost" type="button" title="Next entry date">▶</button>
@@ -76,24 +77,28 @@
           </div>
         </div>
 
+        <!-- MA7 CARD (WITH GOAL + REQUIRED NEXT-7 AVG) -->
         <div class="card metric">
           <div class="label">MA7</div>
           <div class="value" id="ma7">—</div>
           <div class="tiny muted">Current (last 7 calendar days)</div>
           <div class="tiny muted">Prior: <span id="ma7Prev">—</span></div>
           <div class="tiny muted">Δ: <span id="ma7Delta">—</span></div>
-<div class="row" style="margin-top:10px; gap:10px; align-items:end; flex-wrap:wrap;">
-            <label style="flex:1;">
+
+          <div class="row" style="margin-top:10px; gap:10px; align-items:end; flex-wrap:wrap;">
+            <label style="flex:1; min-width:160px;">
               Goal Δ7
-              <input id="goalDelta7" type="text" inputmode="decimal" placeholder="e.g. -1.0" value="0.0" />
+              <!-- TEXT INPUT so you can type a minus sign on phones -->
+              <input id="goalDelta7" type="text" inputmode="text" placeholder="e.g. -1.0" value="0.0" style="width:100%; max-width:100%;" />
             </label>
-            <div style="min-width:120px;">
+
+            <div style="flex:1; min-width:160px; max-width:100%;">
               <div class="tiny muted">Req next-7 avg</div>
               <div class="value" id="reqNext7Avg">—</div>
             </div>
           </div>
-          <div class="tiny muted" id="reqNext7Hint" style="margin-top:6px;">—</div>
 
+          <div class="tiny muted" id="reqNext7Hint" style="margin-top:6px;">—</div>
         </div>
 
         <div class="card metric">
@@ -111,8 +116,7 @@
           <div class="tiny muted">Prior: <span id="ma28Prev">—</span></div>
           <div class="tiny muted">Δ: <span id="ma28Delta">—</span></div>
         </div>
-
-        </section>
+      </section>
 
       <section class="card">
         <h2>Entries</h2>
@@ -123,41 +127,19 @@
       <section class="card">
         <h2>How the math works</h2>
         <ul class="tiny">
-          <li>
-            <b>MA7 / MA14 / MA28</b>: averages of entries dated within the last 7 / 14 / 28
-            calendar days relative to your latest logged date.
-          </li>
-          <li>
-            <b>Prior</b>: the immediately preceding calendar window of the same length.
-          </li>
-          <li>
-            <b>Δ</b>: current average minus prior average (positive means upward trend).
-          </li>
-          <li>
-            If you skip a day, it is simply not counted (no zeros inserted).
-          </li>
+          <li><b>MA7 / MA14 / MA28</b>: averages of entries dated within the last 7 / 14 / 28 calendar days relative to your as-of date.</li>
+          <li><b>Prior</b>: the immediately preceding calendar window of the same length.</li>
+          <li><b>Δ</b>: current average minus prior average (positive means upward trend).</li>
+          <li>If you skip a day, it is simply not counted (no zeros inserted).</li>
         </ul>
       </section>
     </main>
 
-    <script src="app.js?v=20260204.4"></script>
-     </body>
+    <script src="app.js?v=20260204.3"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
+      }
+    </script>
+  </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
