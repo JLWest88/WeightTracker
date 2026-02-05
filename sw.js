@@ -1,4 +1,4 @@
-const CACHE_NAME = "wt-cache-2026-02-04.2";
+const CACHE_NAME = "wt-cache-2026-02-04.4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -73,6 +73,7 @@ self.addEventListener("fetch", (event) => {
     caches.match(req).then((cached) => cached || fetch(req))
   );
 });
+
 
 
 
