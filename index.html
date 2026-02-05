@@ -19,6 +19,7 @@
     </header>
 
     <main class="container">
+      <!-- PRIMARY ACTION -->
       <section class="card">
         <h2>Quick Add</h2>
         <div class="row">
@@ -28,7 +29,13 @@
           </label>
           <label>
             Weight
-            <input id="weightInput" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 179.6" />
+            <input
+              id="weightInput"
+              type="number"
+              inputmode="decimal"
+              step="0.1"
+              placeholder="e.g. 179.6"
+            />
           </label>
           <label>
             Notes (optional)
@@ -45,6 +52,43 @@
         </p>
       </section>
 
+      <!-- PLAN (F-DRIVEN) -->
+      <div class="sectionTitle">Plan</div>
+      <section class="card plan">
+        <h2>Plan (anchored)</h2>
+        <div class="tiny muted" style="margin:-6px 0 10px;">
+          This section stays anchored (no “creeping” when you scroll the dashboard).
+        </div>
+
+        <div class="controlsRow">
+          <button id="asOfPrev" class="ghost" type="button" title="Previous entry date">◀</button>
+
+          <label style="flex:1; min-width:160px;">
+            Plan From (F)
+            <select id="asOfSelect"></select>
+          </label>
+
+          <button id="asOfNext" class="ghost" type="button" title="Next entry date">▶</button>
+        </div>
+
+        <div class="controlsRow" style="margin-top:12px;">
+          <label style="flex:1; min-width:160px;">
+            Goal Δ7
+            <input id="goalDelta7" type="text" inputmode="text" placeholder="e.g. -1.0" value="0.0" />
+          </label>
+
+          <div style="flex:1; min-width:160px;">
+            <div class="tiny muted">Req next-7 avg</div>
+            <div class="value" id="reqNext7Avg">—</div>
+          </div>
+        </div>
+
+        <div class="tiny muted" id="reqNext7Hint" style="margin-top:6px;">—</div>
+      </section>
+
+      <!-- DASHBOARD (B-DRIVEN) -->
+      <div class="sectionTitle">Dashboard</div>
+
       <section class="grid">
         <div class="card metric">
           <div class="label">Latest date</div>
@@ -56,51 +100,37 @@
           <div class="value" id="latestWeight">—</div>
         </div>
 
-        <!-- AS-OF CARD -->
+        <!-- VIEW AS-OF (B) -->
         <div class="card metric">
-          <div class="label">As-of date</div>
+          <div class="label">View As-of (B)</div>
           <div class="value" id="asOfDateDisplay">—</div>
 
-          <div class="row" style="margin-top:10px; gap:8px; align-items:end;">
-            <button id="asOfPrev" class="ghost" type="button" title="Previous entry date">◀</button>
+          <div class="controlsRow">
+            <button id="bPrev" class="ghost" type="button" title="Previous view date">◀</button>
 
-            <label style="flex:1; min-width:0;">
+            <label style="flex:1; min-width:160px;">
               Jump
-              <select id="asOfSelect" style="width:100%; max-width:100%;"></select>
+              <select id="bSelect"></select>
             </label>
 
-            <button id="asOfNext" class="ghost" type="button" title="Next entry date">▶</button>
+            <button id="bNext" class="ghost" type="button" title="Next view date">▶</button>
           </div>
 
           <div class="tiny muted" style="margin-top:8px;">
-            Time travel: stats compute as if viewed on the selected day.
+            Time travel: MA cards compute as if viewed on the selected day.
           </div>
         </div>
 
-        <!-- MA7 CARD (WITH GOAL + REQUIRED NEXT-7 AVG) -->
+        <!-- MA7 -->
         <div class="card metric">
           <div class="label">MA7</div>
           <div class="value" id="ma7">—</div>
           <div class="tiny muted">Current (last 7 calendar days)</div>
           <div class="tiny muted">Prior: <span id="ma7Prev">—</span></div>
           <div class="tiny muted">Δ: <span id="ma7Delta">—</span></div>
-
-          <div class="row" style="margin-top:10px; gap:10px; align-items:end; flex-wrap:wrap;">
-            <label style="flex:1; min-width:160px;">
-              Goal Δ7
-              <!-- TEXT INPUT so you can type a minus sign on phones -->
-              <input id="goalDelta7" type="text" inputmode="text" placeholder="e.g. -1.0" value="0.0" style="width:100%; max-width:100%;" />
-            </label>
-
-            <div style="flex:1; min-width:160px; max-width:100%;">
-              <div class="tiny muted">Req next-7 avg</div>
-              <div class="value" id="reqNext7Avg">—</div>
-            </div>
-          </div>
-
-          <div class="tiny muted" id="reqNext7Hint" style="margin-top:6px;">—</div>
         </div>
 
+        <!-- MA14 -->
         <div class="card metric">
           <div class="label">MA14</div>
           <div class="value" id="ma14">—</div>
@@ -109,6 +139,7 @@
           <div class="tiny muted">Δ: <span id="ma14Delta">—</span></div>
         </div>
 
+        <!-- MA28 -->
         <div class="card metric">
           <div class="label">MA28</div>
           <div class="value" id="ma28">—</div>
@@ -127,7 +158,7 @@
       <section class="card">
         <h2>How the math works</h2>
         <ul class="tiny">
-          <li><b>MA7 / MA14 / MA28</b>: averages of entries dated within the last 7 / 14 / 28 calendar days relative to your as-of date.</li>
+          <li><b>MA7 / MA14 / MA28</b>: averages of entries dated within the last 7 / 14 / 28 calendar days relative to your view as-of date (B).</li>
           <li><b>Prior</b>: the immediately preceding calendar window of the same length.</li>
           <li><b>Δ</b>: current average minus prior average (positive means upward trend).</li>
           <li>If you skip a day, it is simply not counted (no zeros inserted).</li>
@@ -135,7 +166,7 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260204.3"></script>
+    <script src="app.js?v=20260205.0"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
