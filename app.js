@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const ASOF_KEY = "wt_asof_date_v1";
-const APP_VERSION = "2026-02-04.4";
+const APP_VERSION = "2026-02-04.3";
 
 // Version display
 const appVersionEl = document.getElementById("appVersion");
@@ -552,4 +552,5 @@ if (cancelBtn) {
 dateInput.value = todayISO();
 exitEditMode();
 render();
+
 
