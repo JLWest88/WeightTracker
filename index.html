@@ -52,12 +52,31 @@
         </p>
       </section>
 
+      <!-- LATEST (DATASET-LATEST, ALWAYS) -->
+      <section class="grid" aria-label="Latest">
+        <div class="card metric">
+          <div class="label">Latest date</div>
+          <div class="value" id="latestDate">—</div>
+        </div>
+
+        <div class="card metric">
+          <div class="label">Latest weight</div>
+          <div class="value" id="latestWeight">—</div>
+        </div>
+      </section>
+
       <!-- PLAN (F-DRIVEN) -->
       <div class="sectionTitle">Plan</div>
       <section class="card plan">
         <h2>Plan (anchored)</h2>
+
         <div class="tiny muted" style="margin:-6px 0 10px;">
           This section stays anchored (no “creeping” when you scroll the dashboard).
+        </div>
+
+        <!-- Plan window range (F → F+6) -->
+        <div class="tiny muted" id="planWindowLine" style="margin:-2px 0 12px;">
+          Plan window: <span id="planWindowRange">—</span>
         </div>
 
         <div class="controlsRow">
@@ -76,76 +95,79 @@
             Goal Δ7
             <input id="goalDelta7" type="text" inputmode="text" placeholder="e.g. -1.0" value="0.0" />
           </label>
-
-          <div style="flex:1; min-width:160px;">
-            <div class="tiny muted">Req next-7 avg</div>
-            <div class="value" id="reqNext7Avg">—</div>
-          </div>
         </div>
 
-        <div class="tiny muted" id="reqNext7Hint" style="margin-top:6px;">—</div>
+        <!-- Hero: required next-7 avg -->
+        <div class="card metric planHero" style="margin-top:12px;">
+          <div class="label">Required next-7 average</div>
+          <div class="value" id="reqNext7Avg">—</div>
+          <div class="tiny muted" id="reqNext7Hint" style="margin-top:6px;">—</div>
+        </div>
       </section>
 
       <!-- DASHBOARD (B-DRIVEN) -->
       <div class="sectionTitle">Dashboard</div>
 
-      <section class="grid">
-        <div class="card metric">
-          <div class="label">Latest date</div>
-          <div class="value" id="latestDate">—</div>
+      <!-- View As-Of (B) controls: full-width row ABOVE MA cards -->
+      <section class="card">
+        <div class="label">View As-of (B)</div>
+        <div class="value" id="asOfDateDisplay">—</div>
+
+        <div class="controlsRow" style="margin-top:10px;">
+          <button id="bPrev" class="ghost" type="button" title="Previous view date">◀</button>
+
+          <label style="flex:1; min-width:160px;">
+            Jump
+            <select id="bSelect"></select>
+          </label>
+
+          <button id="bNext" class="ghost" type="button" title="Next view date">▶</button>
         </div>
 
-        <div class="card metric">
-          <div class="label">Latest weight</div>
-          <div class="value" id="latestWeight">—</div>
+        <div class="tiny muted" style="margin-top:8px;">
+          Time travel: MA cards compute as if viewed on the selected day.
         </div>
+      </section>
 
-        <!-- VIEW AS-OF (B) -->
-        <div class="card metric">
-          <div class="label">View As-of (B)</div>
-          <div class="value" id="asOfDateDisplay">—</div>
-
-          <div class="controlsRow">
-            <button id="bPrev" class="ghost" type="button" title="Previous view date">◀</button>
-
-            <label style="flex:1; min-width:160px;">
-              Jump
-              <select id="bSelect"></select>
-            </label>
-
-            <button id="bNext" class="ghost" type="button" title="Next view date">▶</button>
-          </div>
-
-          <div class="tiny muted" style="margin-top:8px;">
-            Time travel: MA cards compute as if viewed on the selected day.
-          </div>
-        </div>
-
+      <!-- MA CARDS -->
+      <section class="grid" aria-label="Moving averages">
         <!-- MA7 -->
         <div class="card metric">
           <div class="label">MA7</div>
           <div class="value" id="ma7">—</div>
-          <div class="tiny muted">Current (last 7 calendar days)</div>
-          <div class="tiny muted">Prior: <span id="ma7Prev">—</span></div>
+          <div class="tiny muted" id="ma7Range">—</div>
+
+          <div class="tiny muted" style="margin-top:8px;">Prior: <span id="ma7Prev">—</span></div>
           <div class="tiny muted">Δ: <span id="ma7Delta">—</span></div>
+          <div class="tiny muted">
+            Logged: <span id="ma7CovCur">—</span> (prior <span id="ma7CovPrev">—</span>)
+          </div>
         </div>
 
         <!-- MA14 -->
         <div class="card metric">
           <div class="label">MA14</div>
           <div class="value" id="ma14">—</div>
-          <div class="tiny muted">Current (last 14 calendar days)</div>
-          <div class="tiny muted">Prior: <span id="ma14Prev">—</span></div>
+          <div class="tiny muted" id="ma14Range">—</div>
+
+          <div class="tiny muted" style="margin-top:8px;">Prior: <span id="ma14Prev">—</span></div>
           <div class="tiny muted">Δ: <span id="ma14Delta">—</span></div>
+          <div class="tiny muted">
+            Logged: <span id="ma14CovCur">—</span> (prior <span id="ma14CovPrev">—</span>)
+          </div>
         </div>
 
         <!-- MA28 -->
         <div class="card metric">
           <div class="label">MA28</div>
           <div class="value" id="ma28">—</div>
-          <div class="tiny muted">Current (last 28 calendar days)</div>
-          <div class="tiny muted">Prior: <span id="ma28Prev">—</span></div>
+          <div class="tiny muted" id="ma28Range">—</div>
+
+          <div class="tiny muted" style="margin-top:8px;">Prior: <span id="ma28Prev">—</span></div>
           <div class="tiny muted">Δ: <span id="ma28Delta">—</span></div>
+          <div class="tiny muted">
+            Logged: <span id="ma28CovCur">—</span> (prior <span id="ma28CovPrev">—</span>)
+          </div>
         </div>
       </section>
 
@@ -174,4 +196,3 @@
     </script>
   </body>
 </html>
-
