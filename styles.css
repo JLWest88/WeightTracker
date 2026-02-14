@@ -228,17 +228,15 @@ section.card .controlsRow label{
   line-height:1.25;
 }
 
-/* Make the "remaining required average" match the Plan hero number styling */
+/* Make remaining required average exactly match the Plan hero number */
 #reqRemainingAvg{
-  font-size:34px;
-  font-weight:900;
-  letter-spacing:.3px;
-  line-height:1.05;
+  font-size:inherit;
+  font-weight:inherit;
+  letter-spacing:inherit;
+  line-height:inherit;
 }
 
-@media(min-width:760px){
-  #reqRemainingAvg{font-size:40px;}
-}
+
 
 
 
