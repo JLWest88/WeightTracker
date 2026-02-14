@@ -7,13 +7,16 @@
   --primary:#60a5fa;
   --primary2:#2563eb;
 }
+
 *{box-sizing:border-box}
+
 body{
   margin:0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   background: linear-gradient(180deg,#070b14 0%, #0b1220 35%, #0b1220 100%);
   color:var(--text);
 }
+
 .topbar{
   padding:18px 16px;
   border-bottom:1px solid var(--border);
@@ -22,9 +25,22 @@ body{
   justify-content:space-between;
   gap:12px;
 }
+
 h1{margin:0;font-size:20px}
-.sub{margin:4px 0 0;color:var(--muted);font-size:12px;max-width:46ch}
-.container{padding:16px;max-width:920px;margin:0 auto}
+
+.sub{
+  margin:4px 0 0;
+  color:var(--muted);
+  font-size:12px;
+  max-width:46ch
+}
+
+.container{
+  padding:16px;
+  max-width:920px;
+  margin:0 auto
+}
+
 .card{
   background:rgba(16,26,46,.9);
   border:1px solid var(--border);
@@ -33,25 +49,38 @@ h1{margin:0;font-size:20px}
   box-shadow: 0 12px 30px rgba(0,0,0,.25);
   margin-bottom:14px;
 }
+
 .grid{
   display:grid;
   grid-template-columns: repeat(2, minmax(0,1fr));
   gap:12px;
   margin-bottom:14px;
 }
+
 @media(min-width:760px){
   .grid{grid-template-columns: repeat(3, minmax(0,1fr));}
 }
+
 h2{margin:0 0 10px;font-size:14px;color:#f3f4f6}
+
 .row{
   display:grid;
   grid-template-columns: 1fr;
   gap:10px;
 }
+
 @media(min-width:760px){
   .row{grid-template-columns: 140px 140px 1fr;}
 }
-label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)}
+
+label{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  font-size:12px;
+  color:var(--muted)
+}
+
 input{
   padding:10px 10px;
   border-radius:12px;
@@ -60,7 +89,14 @@ input{
   color:var(--text);
   font-size:14px;
 }
-.actions{display:flex;gap:10px;margin-top:10px;align-items:center}
+
+.actions{
+  display:flex;
+  gap:10px;
+  margin-top:10px;
+  align-items:center
+}
+
 button{
   border-radius:12px;
   border:1px solid var(--border);
@@ -69,17 +105,41 @@ button{
   color:var(--text);
   background:rgba(255,255,255,.04);
 }
+
 button.primary{
   background: linear-gradient(180deg, var(--primary) 0%, var(--primary2) 100%);
   border:0;
 }
-button.ghost{background:transparent;color:var(--muted)}
+
+button.ghost{
+  background:transparent;
+  color:var(--muted)
+}
+
 button:active{transform:translateY(1px)}
-.metric .label{color:var(--muted);font-size:12px;margin-bottom:6px}
-.metric .value{font-size:22px;font-weight:800;letter-spacing:.2px}
+
+.metric .label{
+  color:var(--muted);
+  font-size:12px;
+  margin-bottom:6px
+}
+
+.metric .value{
+  font-size:22px;
+  font-weight:800;
+  letter-spacing:.2px
+}
+
 .tiny{font-size:12px}
 .muted{color:var(--muted)}
-.list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+
+.list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:10px
+}
+
 .item{
   display:grid;
   grid-template-columns: 110px 1fr auto;
@@ -90,15 +150,29 @@ button:active{transform:translateY(1px)}
   border:1px solid var(--border);
   background:rgba(255,255,255,.03);
 }
-.item .d{color:#cbd5e1;font-variant-numeric: tabular-nums}
-.item .w{font-weight:800;font-variant-numeric: tabular-nums}
-.item .n{color:var(--muted);font-size:12px}
+
+.item .d{
+  color:#cbd5e1;
+  font-variant-numeric: tabular-nums
+}
+
+.item .w{
+  font-weight:800;
+  font-variant-numeric: tabular-nums
+}
+
+.item .n{
+  color:var(--muted);
+  font-size:12px
+}
+
 .item button{
   padding:8px 10px;
   border-radius:10px;
   font-weight:700;
   background:rgba(255,255,255,.04);
 }
+
 .pill{
   font-size:12px;
   color:#dbeafe;
@@ -109,7 +183,6 @@ button:active{transform:translateY(1px)}
   white-space:nowrap;
 }
 
-/* Make selects look like inputs */
 select{
   padding:10px 10px;
   border-radius:12px;
@@ -119,17 +192,15 @@ select{
   font-size:14px;
 }
 
-/* Section titles (lightweight headers between cards) */
 .sectionTitle{
-  margin: 2px 0 8px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-transform: uppercase;
+  margin:2px 0 8px;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
 }
 
-/* Inline control rows (use inside metric cards) */
 .controlsRow{
   display:flex;
   gap:10px;
@@ -139,96 +210,41 @@ select{
 }
 
 .controlsRow > *{
-  min-width: 0; /* prevents overflow on small screens */
+  min-width:0;
 }
 
-/* Compact button sizing in control rows */
 .controlsRow button{
   padding:8px 10px;
   border-radius:10px;
 }
 
-/* Keep inputs/selects from exceeding card width */
 .metric input,
 .metric select{
   width:100%;
   max-width:100%;
 }
 
-/* Optional: visually distinguish the Plan card */
 .card.plan{
   border-color: rgba(96,165,250,.22);
-  box-shadow: 0 12px 30px rgba(0,0,0,.25), 0 0 0 1px rgba(96,165,250,.08) inset;
+  box-shadow:
+    0 12px 30px rgba(0,0,0,.25),
+    0 0 0 1px rgba(96,165,250,.08) inset;
 }
-/* ---- UI POLISH PATCH (Plan hero + control-strip feel + mobile overflow) ---- */
 
-/* Make the "Latest" strip feel like a quick status row under Quick Add */
+/* Smaller latest strip values */
 .grid[aria-label="Latest"] .metric .value{
-  font-size:20px; /* slightly smaller than MA cards so it doesn't compete */
+  font-size:20px;
 }
 
-/* Make the Plan hero metric pop */
+/* ---- PLAN HERO (single source of truth) ---- */
+
 .planHero .label{
   font-size:12px;
   color:var(--muted);
   margin-bottom:6px;
 }
-.planHero .value{
-  font-size:34px;
-  font-weight:900;
-  letter-spacing:.3px;
-  line-height:1.05;
-}
-@media(min-width:760px){
-  .planHero .value{font-size:40px;}
-}
 
-/* Treat the View As-of (B) card as a control strip: a bit tighter + less "metric" */
-#asOfDateDisplay{
-  font-size:18px;
-  font-weight:800;
-  letter-spacing:.2px;
-}
-section.card .controlsRow{
-  align-items:end;
-}
-section.card .controlsRow label{
-  gap:6px;
-}
-
-/* MA range line should be clearly subordinate but readable */
-#ma7Range, #ma14Range, #ma28Range{
-  margin-top:2px;
-  color:var(--muted);
-  font-size:12px;
-}
-
-/* Keep item rows from overflowing on very narrow screens */
-@media(max-width:420px){
-  .item{
-    grid-template-columns: 92px 1fr auto;
-    gap:8px;
-  }
-  .metric .value{
-    font-size:20px; /* reduce a hair on tiny screens */
-  }
-  .planHero .value{
-    font-size:30px;
-  }
-}
-
-/* Make buttons in list a bit less dominant */
-.item button{
-  padding:7px 9px;
-  font-weight:700;
-}
-
-/* Slightly reduce vertical spacing inside metric cards so added lines don't feel cramped */
-.metric .tiny{
-  line-height:1.25;
-}
-
-/* If anything strips the usual .value styling, this guarantees hero sizing */
+/* Strong selector prevents mobile override issues */
 .card.plan .planHero .value{
   font-size:34px;
   font-weight:900;
@@ -237,23 +253,34 @@ section.card .controlsRow label{
 }
 
 @media(min-width:760px){
-  .card.plan .planHero .value{font-size:40px;}
+  .card.plan .planHero .value{
+    font-size:40px;
+  }
 }
 
 @media(max-width:420px){
-  .card.plan .planHero .value{font-size:30px;}
+  .item{
+    grid-template-columns:92px 1fr auto;
+    gap:8px;
+  }
+
+  .metric .value{
+    font-size:20px;
+  }
+
+  .card.plan .planHero .value{
+    font-size:30px;
+  }
 }
 
+/* Range line styling */
+#ma7Range, #ma14Range, #ma28Range{
+  margin-top:2px;
+  color:var(--muted);
+  font-size:12px;
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
+/* Slightly tighten metric tiny lines */
+.metric .tiny{
+  line-height:1.25;
+}
