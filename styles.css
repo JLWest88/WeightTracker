@@ -229,9 +229,14 @@ section.card .controlsRow label{
 }
 
 /* Remaining uses the exact same styling as the planHero value */
-#reqRemainingAvg{ all: unset; }
-#reqRemainingAvg{ display:block; }
+#reqRemainingAvg{
+  font-size:inherit;
+  font-weight:inherit;
+  letter-spacing:inherit;
+  line-height:inherit;
 }
+
+
 
 
 
