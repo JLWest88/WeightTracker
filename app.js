@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
-const APP_VERSION = "2026-02-05.2"; // bump so you can tell cache/version updates apart
+const APP_VERSION = "2026-02-14.1";
 
 // ---------- DOM ----------
 const appVersionEl = document.getElementById("appVersion");
@@ -29,45 +29,23 @@ const bPrevBtn = document.getElementById("bPrev");
 const bNextBtn = document.getElementById("bNext");
 const bSelect = document.getElementById("bSelect");
 
-// MA cards (driven by B)
-const ma7El = document.getElementById("ma7");
-const ma14El = document.getElementById("ma14");
-const ma28El = document.getElementById("ma28");
-
-const ma7PrevEl = document.getElementById("ma7Prev");
-const ma7DeltaEl = document.getElementById("ma7Delta");
-
-const ma14PrevEl = document.getElementById("ma14Prev");
-const ma14DeltaEl = document.getElementById("ma14Delta");
-
-const ma28PrevEl = document.getElementById("ma28Prev");
-const ma28DeltaEl = document.getElementById("ma28Delta");
-
-// NEW: ranges + coverage INSIDE MA cards
-const ma7RangeEl = document.getElementById("ma7Range");
-const ma14RangeEl = document.getElementById("ma14Range");
-const ma28RangeEl = document.getElementById("ma28Range");
-
-const ma7CovCurEl = document.getElementById("ma7CovCur");
-const ma7CovPrevEl = document.getElementById("ma7CovPrev");
-
-const ma14CovCurEl = document.getElementById("ma14CovCur");
-const ma14CovPrevEl = document.getElementById("ma14CovPrev");
-
-const ma28CovCurEl = document.getElementById("ma28CovCur");
-const ma28CovPrevEl = document.getElementById("ma28CovPrev");
-
 // Plan (F)
 const fPrevBtn = document.getElementById("asOfPrev");
 const fNextBtn = document.getElementById("asOfNext");
 const fSelect = document.getElementById("asOfSelect");
-
 const goalInput = document.getElementById("goalDelta7");
+
 const reqNext7AvgEl = document.getElementById("reqNext7Avg");
 const reqNext7HintEl = document.getElementById("reqNext7Hint");
 
-// NEW: plan window range display
 const planWindowRangeEl = document.getElementById("planWindowRange");
+const planTodayEl = document.getElementById("planToday");
+
+const reqRemainingAvgEl = document.getElementById("reqRemainingAvg");
+const reqRemainingHintEl = document.getElementById("reqRemainingHint");
+
+// Helpers
+function el(id) { return document.getElementById(id); }
 
 // ---------- STATE ----------
 let editingId = null;
@@ -110,6 +88,13 @@ function addDays(dateObj, days) {
   return d;
 }
 
+function diffDays(startISO, endISO) {
+  const a = isoToDate(startISO);
+  const b = isoToDate(endISO);
+  const ms = b - a;
+  return Math.round(ms / (24 * 60 * 60 * 1000));
+}
+
 function formatISO(iso) {
   const d = isoToDate(iso);
   return d.toLocaleDateString(undefined, {
@@ -139,17 +124,27 @@ function formatDelta(x) {
 }
 
 function parseGoal(text) {
-  // Allow "-0.3" and also "0,3"
   const raw = String(text || "").trim().replace(",", ".");
   const v = Number(raw);
   return Number.isFinite(v) ? v : 0.0;
 }
 
 function formatRange(endISO, windowDays) {
-  // Current window only: (end - (N-1)) → end
   const end = isoToDate(endISO);
   const start = addDays(end, -(windowDays - 1));
   return `${formatISO(dateToISO(start))} → ${formatISO(endISO)}`;
+}
+
+function clampISO(iso, startISO, endISO) {
+  if (iso < startISO) return startISO;
+  if (iso > endISO) return endISO;
+  return iso;
+}
+
+function stepISO(iso, direction) {
+  const d = isoToDate(iso);
+  const next = addDays(d, direction);
+  return dateToISO(next);
 }
 
 // ---------- STORAGE ----------
@@ -176,7 +171,6 @@ function saveEntries(entries) {
 
 function ensureIds(entries) {
   let changed = false;
-
   for (const e of entries) {
     if (!e.id) {
       e.id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
@@ -187,7 +181,6 @@ function ensureIds(entries) {
       changed = true;
     }
   }
-
   if (changed) saveEntries(entries);
   return entries;
 }
@@ -212,7 +205,7 @@ function savePlanFrom(iso) {
   else localStorage.setItem(F_KEY, iso);
 }
 
-// ---------- DATE LISTS FOR SELECTORS ----------
+// ---------- DATE LISTS ----------
 function getSortedEntries(entries) {
   return [...entries].sort((a, b) => {
     if (a.date !== b.date) return a.date.localeCompare(b.date);
@@ -229,7 +222,6 @@ function getLatestEntryInfo(entries) {
 }
 
 function makeReasonableDateRange(entries) {
-  // Range: from (max(latest-120d, earliest)) to (max(today, latest)+30d).
   const today = isoToDate(todayISO());
 
   if (!entries.length) {
@@ -254,36 +246,19 @@ function buildISOListInclusive(startISO, endISO) {
   const start = isoToDate(startISO);
   const end = isoToDate(endISO);
   const out = [];
-  for (let d = start; d <= end; d = addDays(d, 1)) {
-    out.push(dateToISO(d));
-  }
+  for (let d = start; d <= end; d = addDays(d, 1)) out.push(dateToISO(d));
   return out;
-}
-
-function clampISO(iso, startISO, endISO) {
-  if (iso < startISO) return startISO;
-  if (iso > endISO) return endISO;
-  return iso;
-}
-
-function stepISO(iso, direction) {
-  const d = isoToDate(iso);
-  const next = addDays(d, direction);
-  return dateToISO(next);
 }
 
 // ---------- METRICS ----------
 function windowStats(sortedEntries, endDateObj, windowDays) {
   const start = addDays(endDateObj, -(windowDays - 1));
   const vals = [];
-
   for (const e of sortedEntries) {
     const d = isoToDate(e.date);
     if (d >= start && d <= endDateObj) vals.push(e.weight);
   }
-
   if (vals.length === 0) return { avg: null, count: 0, windowDays };
-
   const sum = vals.reduce((a, b) => a + b, 0);
   return { avg: sum / vals.length, count: vals.length, windowDays };
 }
@@ -305,36 +280,78 @@ function computeDashboardMetrics(entries, endISO) {
   const sorted = getSortedEntries(entries);
   const endDate = isoToDate(endISO);
 
-  const w7 = currentAndPrior(sorted, endDate, 7);
-  const w14 = currentAndPrior(sorted, endDate, 14);
-  const w28 = currentAndPrior(sorted, endDate, 28);
+  const mk = (n) => currentAndPrior(sorted, endDate, n);
+
+  const w3 = mk(3);
+  const w7 = mk(7);
+  const w14 = mk(14);
+  const w28 = mk(28);
+  const w56 = mk(56);
+  const w112 = mk(112);
 
   return {
-    ma7: w7.current.avg,
-    ma7Count: w7.current.count,
-    ma7Prior: w7.prior.avg,
-    ma7PriorCount: w7.prior.count,
-    change7: w7.delta,
-
-    ma14: w14.current.avg,
-    ma14Count: w14.current.count,
-    ma14Prior: w14.prior.avg,
-    ma14PriorCount: w14.prior.count,
-    change14: w14.delta,
-
-    ma28: w28.current.avg,
-    ma28Count: w28.current.count,
-    ma28Prior: w28.prior.avg,
-    ma28PriorCount: w28.prior.count,
-    change28: w28.delta
+    ma3: w3.current.avg, ma3Count: w3.current.count, ma3Prior: w3.prior.avg, ma3PriorCount: w3.prior.count, change3: w3.delta,
+    ma7: w7.current.avg, ma7Count: w7.current.count, ma7Prior: w7.prior.avg, ma7PriorCount: w7.prior.count, change7: w7.delta,
+    ma14: w14.current.avg, ma14Count: w14.current.count, ma14Prior: w14.prior.avg, ma14PriorCount: w14.prior.count, change14: w14.delta,
+    ma28: w28.current.avg, ma28Count: w28.current.count, ma28Prior: w28.prior.avg, ma28PriorCount: w28.prior.count, change28: w28.delta,
+    ma56: w56.current.avg, ma56Count: w56.current.count, ma56Prior: w56.prior.avg, ma56PriorCount: w56.prior.count, change56: w56.delta,
+    ma112: w112.current.avg, ma112Count: w112.current.count, ma112Prior: w112.prior.avg, ma112PriorCount: w112.prior.count, change112: w112.delta
   };
 }
 
-// Required next-7 avg driven by F
+// Target next-7 avg driven by F
 function requiredNext7AvgForF(entries, fISO, goal) {
   const mF = computeDashboardMetrics(entries, fISO);
   if (mF.ma7 == null) return { req: null, ma7AtF: null, countAtF: mF.ma7Count };
   return { req: mF.ma7 + goal, ma7AtF: mF.ma7, countAtF: mF.ma7Count };
+}
+
+// Daily weights (latest per day wins)
+function dailyWeightsMap(entries) {
+  const byDate = new Map();
+  const sorted = getSortedEntries(entries);
+  for (const e of sorted) byDate.set(e.date, e.weight);
+  return byDate;
+}
+
+// Remaining-days required average (uses TODAY for progress; shows coverage)
+function requiredRemainingAvgDaily(entries, fISO, target7Avg) {
+  const fStart = fISO;
+  const fEndISO = dateToISO(addDays(isoToDate(fISO), 6));
+  const today = todayISO();
+
+  // progress is based on real today, clamped into plan window
+  const progressISO = clampISO(today, fStart, fEndISO);
+  const elapsedDays = diffDays(fStart, progressISO) + 1; // 1..7
+  const remainingDays = 7 - elapsedDays; // 6..0
+
+  const byDay = dailyWeightsMap(entries);
+
+  let sumKnown = 0;
+  let knownCount = 0;
+
+  for (let i = 0; i < elapsedDays; i++) {
+    const dayISO = dateToISO(addDays(isoToDate(fStart), i));
+    const w = byDay.get(dayISO);
+    if (typeof w === "number" && Number.isFinite(w)) {
+      sumKnown += w;
+      knownCount++;
+    }
+  }
+
+  const missingElapsed = elapsedDays - knownCount;
+
+  if (remainingDays === 0) {
+    const achievedIfAllKnown = (knownCount === 7) ? (sumKnown / 7) : null;
+    return { req: null, elapsedDays, remainingDays, knownCount, missingElapsed, achievedIfAllKnown, fEndISO, progressISO };
+  }
+
+  // Assumes 1 weigh-in per remaining day (denominator = remainingDays)
+  const totalTargetSum = target7Avg * 7;
+  const remainingTargetSum = totalTargetSum - sumKnown;
+  const req = remainingTargetSum / remainingDays;
+
+  return { req, elapsedDays, remainingDays, knownCount, missingElapsed, fEndISO, progressISO };
 }
 
 // ---------- EDIT MODE ----------
@@ -372,20 +389,20 @@ function render() {
   const entries = ensureIds(loadEntries());
   const sorted = getSortedEntries(entries);
 
-  // Latest cards (dataset-latest)
+  // Latest cards
   const latest = getLatestEntryInfo(entries);
   if (latestDateEl) latestDateEl.textContent = latest.latestDateISO ? formatISO(latest.latestDateISO) : "—";
   if (latestWeightEl) latestWeightEl.textContent = (latest.latestWeight == null) ? "—" : round1(latest.latestWeight).toFixed(1);
 
-  // Build selector range
+  // Selector range
   const { startISO, endISO } = makeReasonableDateRange(entries);
   const isoList = buildISOListInclusive(startISO, endISO);
 
-  // Clamp B and F into range
+  // Clamp B and F
   bISO = clampISO(bISO, startISO, endISO);
   fISO = clampISO(fISO, startISO, endISO);
 
-  // Populate selects (only rebuild if size changed)
+  // Populate selects (rebuild only if size changed)
   if (bSelect && bSelect.options.length !== isoList.length) {
     bSelect.innerHTML = isoList.map(iso => {
       const label = (iso === todayISO()) ? `${formatISO(iso)} (Today)` : formatISO(iso);
@@ -402,58 +419,92 @@ function render() {
   if (bSelect) bSelect.value = bISO;
   if (fSelect) fSelect.value = fISO;
 
-  // Show B on dashboard as-of display
+  // B display
   if (asOfDisplayEl) asOfDisplayEl.textContent = formatISO(bISO);
 
   // Dashboard metrics (B-driven)
   const mB = computeDashboardMetrics(entries, bISO);
 
-  if (ma7El) ma7El.textContent = formatMaybeNumber(mB.ma7);
-  if (ma14El) ma14El.textContent = formatMaybeNumber(mB.ma14);
-  if (ma28El) ma28El.textContent = formatMaybeNumber(mB.ma28);
+  const specs = [
+    { n: 3, k: "3" },
+    { n: 7, k: "7" },
+    { n: 14, k: "14" },
+    { n: 28, k: "28" },
+    { n: 56, k: "56" },
+    { n: 112, k: "112" }
+  ];
 
-  if (ma7PrevEl) ma7PrevEl.textContent = formatMaybeNumber(mB.ma7Prior);
-  if (ma7DeltaEl) ma7DeltaEl.textContent = formatDelta(mB.change7);
+  for (const s of specs) {
+    const k = s.k;
+    const avg = mB[`ma${k}`];
+    const prior = mB[`ma${k}Prior`];
+    const delta = mB[`change${k}`];
+    const cCur = mB[`ma${k}Count`];
+    const cPrev = mB[`ma${k}PriorCount`];
 
-  if (ma14PrevEl) ma14PrevEl.textContent = formatMaybeNumber(mB.ma14Prior);
-  if (ma14DeltaEl) ma14DeltaEl.textContent = formatDelta(mB.change14);
+    const vEl = el(`ma${k}`);
+    const pEl = el(`ma${k}Prev`);
+    const dEl = el(`ma${k}Delta`);
+    const rEl = el(`ma${k}Range`);
+    const covCurEl = el(`ma${k}CovCur`);
+    const covPrevEl = el(`ma${k}CovPrev`);
 
-  if (ma28PrevEl) ma28PrevEl.textContent = formatMaybeNumber(mB.ma28Prior);
-  if (ma28DeltaEl) ma28DeltaEl.textContent = formatDelta(mB.change28);
-
-  // NEW: current ranges for MA cards (no prior range shown)
-  if (ma7RangeEl) ma7RangeEl.textContent = formatRange(bISO, 7);
-  if (ma14RangeEl) ma14RangeEl.textContent = formatRange(bISO, 14);
-  if (ma28RangeEl) ma28RangeEl.textContent = formatRange(bISO, 28);
-
-  // NEW: coverage counts inside cards
-  if (ma7CovCurEl) ma7CovCurEl.textContent = `${mB.ma7Count}/7`;
-  if (ma7CovPrevEl) ma7CovPrevEl.textContent = `${mB.ma7PriorCount}/7`;
-
-  if (ma14CovCurEl) ma14CovCurEl.textContent = `${mB.ma14Count}/14`;
-  if (ma14CovPrevEl) ma14CovPrevEl.textContent = `${mB.ma14PriorCount}/14`;
-
-  if (ma28CovCurEl) ma28CovCurEl.textContent = `${mB.ma28Count}/28`;
-  if (ma28CovPrevEl) ma28CovPrevEl.textContent = `${mB.ma28PriorCount}/28`;
-
-  // NEW: Plan window range (Option A = F → F+6)
-  if (planWindowRangeEl) {
-    const fStart = isoToDate(fISO);
-    const fEndISO = dateToISO(addDays(fStart, 6));
-    planWindowRangeEl.textContent = `${formatISO(fISO)} → ${formatISO(fEndISO)}`;
+    if (vEl) vEl.textContent = formatMaybeNumber(avg);
+    if (pEl) pEl.textContent = formatMaybeNumber(prior);
+    if (dEl) dEl.textContent = formatDelta(delta);
+    if (rEl) rEl.textContent = formatRange(bISO, s.n);
+    if (covCurEl) covCurEl.textContent = `${cCur}/${s.n}`;
+    if (covPrevEl) covPrevEl.textContent = `${cPrev}/${s.n}`;
   }
 
-  // Plan estimator (F-driven)
+  // Plan window line (F → F+6) + today
+  if (planWindowRangeEl) {
+    const fEndISO = dateToISO(addDays(isoToDate(fISO), 6));
+    planWindowRangeEl.textContent = `${formatISO(fISO)} → ${formatISO(fEndISO)}`;
+  }
+  if (planTodayEl) planTodayEl.textContent = formatISO(todayISO());
+
+  // Plan estimator #1: target next-7 avg starting at F
   const est = requiredNext7AvgForF(entries, fISO, goalDelta7);
-  if (reqNext7AvgEl) reqNext7AvgEl.textContent = (est.req == null) ? "—" : round1(est.req).toFixed(1);
+  const target7 = est.req;
+
+  if (reqNext7AvgEl) reqNext7AvgEl.textContent = (target7 == null) ? "—" : round1(target7).toFixed(1);
 
   if (reqNext7HintEl) {
-    if (est.req == null) {
+    if (target7 == null) {
       reqNext7HintEl.textContent = `Needs at least 1 weigh-in in the 7-day window ending on ${formatISO(fISO)}.`;
     } else {
       const cov = `${est.countAtF}/7`;
       reqNext7HintEl.textContent =
-        `Based on MA7 at ${formatISO(fISO)} (${round1(est.ma7AtF).toFixed(1)}, coverage ${cov}). If your average weigh-in over the next 7 days is ${round1(est.req).toFixed(1)}, then Δ7 in 7 days will be ${formatDelta(goalDelta7)}.`;
+        `Based on MA7 at ${formatISO(fISO)} (${round1(est.ma7AtF).toFixed(1)}, coverage ${cov}). Target 7-day average for the plan window is ${round1(target7).toFixed(1)}.`;
+    }
+  }
+
+  // Plan estimator #2: required avg for remaining plan days (uses TODAY; shows coverage)
+  if (reqRemainingAvgEl && reqRemainingHintEl) {
+    if (target7 == null) {
+      reqRemainingAvgEl.textContent = "—";
+      reqRemainingHintEl.textContent = "Compute the target next-7 average first (it depends on MA7 at F).";
+    } else {
+      const r = requiredRemainingAvgDaily(entries, fISO, target7);
+
+      if (r.remainingDays === 0) {
+        reqRemainingAvgEl.textContent = "—";
+        if (r.knownCount === 7 && r.achievedIfAllKnown != null) {
+          reqRemainingHintEl.textContent =
+            `Plan window ended today. Achieved 7-day average: ${round1(r.achievedIfAllKnown).toFixed(1)} (target was ${round1(target7).toFixed(1)}).`;
+        } else {
+          reqRemainingHintEl.textContent =
+            `Plan window ended today. Coverage during plan: ${r.knownCount}/7 days logged (missing ${r.missingElapsed}).`;
+        }
+      } else {
+        reqRemainingAvgEl.textContent = round1(r.req).toFixed(1);
+
+        const covText = `${r.knownCount}/${r.elapsedDays} elapsed day(s) logged`;
+        const missText = (r.missingElapsed > 0) ? ` (missing ${r.missingElapsed})` : "";
+        reqRemainingHintEl.textContent =
+          `So far: ${covText}${missText}. Remaining: ${r.remainingDays} day(s). Assumes 1 weigh-in per remaining day to hit the plan-window target (${round1(target7).toFixed(1)}).`;
+      }
     }
   }
 
@@ -485,32 +536,23 @@ function render() {
     }
 
     entriesList.querySelectorAll("button[data-edit-id]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const id = btn.getAttribute("data-edit-id");
-        startEdit(id);
-      });
+      btn.addEventListener("click", () => startEdit(btn.getAttribute("data-edit-id")));
     });
 
     entriesList.querySelectorAll("button[data-id]").forEach(btn => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-id");
         if (editingId === id) exitEditMode();
-        const next = loadEntries().filter(e => e.id !== id);
-        saveEntries(next);
+        saveEntries(loadEntries().filter(e => e.id !== id));
         render();
       });
     });
   }
 
-  // Entry stats line: now keep it simple (since the MA coverage moved into MA cards)
+  // Entries stat line (simple)
   if (entryStats) {
-    if (!sorted.length) {
-      entryStats.textContent = "—";
-    } else {
-      const first = sorted[0].date;
-      const last = sorted[sorted.length - 1].date;
-      entryStats.textContent = `${sorted.length} entries • ${formatISO(first)} → ${formatISO(last)}`;
-    }
+    if (!sorted.length) entryStats.textContent = "—";
+    else entryStats.textContent = `${sorted.length} entries • ${formatISO(sorted[0].date)} → ${formatISO(sorted[sorted.length - 1].date)}`;
   }
 }
 
@@ -614,19 +656,14 @@ addBtn.addEventListener("click", () => {
 
 // Clear all
 clearBtn.addEventListener("click", () => {
-  const ok = confirm("Clear ALL entries stored on this device?");
-  if (!ok) return;
+  if (!confirm("Clear ALL entries stored on this device?")) return;
   localStorage.removeItem(STORAGE_KEY);
   exitEditMode();
   render();
 });
 
 // Cancel edit
-if (cancelBtn) {
-  cancelBtn.addEventListener("click", () => {
-    exitEditMode();
-  });
-}
+if (cancelBtn) cancelBtn.addEventListener("click", () => exitEditMode());
 
 // Init
 dateInput.value = todayISO();
