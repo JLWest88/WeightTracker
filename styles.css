@@ -248,6 +248,22 @@ section.card .controlsRow label{
 @media(max-width:420px){
   .planHero .valueHero{font-size:30px;}
 }
+/* FORCE remaining to match the Plan hero sizing, regardless of class/cascade */
+#reqRemainingAvg{
+  font-size:34px !important;
+  font-weight:900 !important;
+  letter-spacing:.3px !important;
+  line-height:1.05 !important;
+}
+
+@media(min-width:760px){
+  #reqRemainingAvg{ font-size:40px !important; }
+}
+
+@media(max-width:420px){
+  #reqRemainingAvg{ font-size:30px !important; }
+}
+
 
 
 
