@@ -77,6 +77,7 @@
         <!-- Plan window range (F → F+6) -->
         <div class="tiny muted" id="planWindowLine" style="margin:-2px 0 12px;">
           Plan window: <span id="planWindowRange">—</span>
+          <span class="muted" style="margin-left:10px;">Today: <span id="planToday">—</span></span>
         </div>
 
         <div class="controlsRow">
@@ -97,11 +98,18 @@
           </label>
         </div>
 
-        <!-- Hero: required next-7 avg -->
+        <!-- Hero: target next-7 avg (starting at F) -->
         <div class="card metric planHero" style="margin-top:12px;">
-          <div class="label">Required next-7 average</div>
+          <div class="label">Target next-7 average</div>
           <div class="value" id="reqNext7Avg">—</div>
           <div class="tiny muted" id="reqNext7Hint" style="margin-top:6px;">—</div>
+        </div>
+
+        <!-- NEW: remaining-days calculator (uses TODAY for progress) -->
+        <div class="card metric" style="margin-top:12px;">
+          <div class="label">Required average for the rest of this plan</div>
+          <div class="value" id="reqRemainingAvg">—</div>
+          <div class="tiny muted" id="reqRemainingHint" style="margin-top:6px;">—</div>
         </div>
       </section>
 
@@ -129,8 +137,21 @@
         </div>
       </section>
 
-      <!-- MA CARDS -->
+      <!-- MOVING AVERAGES -->
       <section class="grid" aria-label="Moving averages">
+        <!-- MA3 -->
+        <div class="card metric">
+          <div class="label">MA3</div>
+          <div class="value" id="ma3">—</div>
+          <div class="tiny muted" id="ma3Range">—</div>
+
+          <div class="tiny muted" style="margin-top:8px;">Prior: <span id="ma3Prev">—</span></div>
+          <div class="tiny muted">Δ: <span id="ma3Delta">—</span></div>
+          <div class="tiny muted">
+            Logged: <span id="ma3CovCur">—</span> (prior <span id="ma3CovPrev">—</span>)
+          </div>
+        </div>
+
         <!-- MA7 -->
         <div class="card metric">
           <div class="label">MA7</div>
@@ -169,6 +190,32 @@
             Logged: <span id="ma28CovCur">—</span> (prior <span id="ma28CovPrev">—</span>)
           </div>
         </div>
+
+        <!-- MA56 -->
+        <div class="card metric">
+          <div class="label">MA56</div>
+          <div class="value" id="ma56">—</div>
+          <div class="tiny muted" id="ma56Range">—</div>
+
+          <div class="tiny muted" style="margin-top:8px;">Prior: <span id="ma56Prev">—</span></div>
+          <div class="tiny muted">Δ: <span id="ma56Delta">—</span></div>
+          <div class="tiny muted">
+            Logged: <span id="ma56CovCur">—</span> (prior <span id="ma56CovPrev">—</span>)
+          </div>
+        </div>
+
+        <!-- MA112 -->
+        <div class="card metric">
+          <div class="label">MA112</div>
+          <div class="value" id="ma112">—</div>
+          <div class="tiny muted" id="ma112Range">—</div>
+
+          <div class="tiny muted" style="margin-top:8px;">Prior: <span id="ma112Prev">—</span></div>
+          <div class="tiny muted">Δ: <span id="ma112Delta">—</span></div>
+          <div class="tiny muted">
+            Logged: <span id="ma112CovCur">—</span> (prior <span id="ma112CovPrev">—</span>)
+          </div>
+        </div>
       </section>
 
       <section class="card">
@@ -180,7 +227,7 @@
       <section class="card">
         <h2>How the math works</h2>
         <ul class="tiny">
-          <li><b>MA7 / MA14 / MA28</b>: averages of entries dated within the last 7 / 14 / 28 calendar days relative to your view as-of date (B).</li>
+          <li><b>MA3 / MA7 / MA14 / MA28 / MA56 / MA112</b>: averages of entries dated within the last N calendar days relative to your view as-of date (B).</li>
           <li><b>Prior</b>: the immediately preceding calendar window of the same length.</li>
           <li><b>Δ</b>: current average minus prior average (positive means upward trend).</li>
           <li>If you skip a day, it is simply not counted (no zeros inserted).</li>
@@ -188,7 +235,8 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260205.2"></script>
+    <!-- Cache-bust version -->
+    <script src="app.js?v=20260214.1"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
@@ -196,4 +244,3 @@
     </script>
   </body>
 </html>
-
