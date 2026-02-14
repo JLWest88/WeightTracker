@@ -235,6 +235,20 @@ section.card .controlsRow label{
   letter-spacing:inherit;
   line-height:inherit;
 }
+/* If anything strips the usual .value styling, this guarantees hero sizing */
+.planHero .valueHero{
+  font-size:34px;
+  font-weight:900;
+  letter-spacing:.3px;
+  line-height:1.05;
+}
+@media(min-width:760px){
+  .planHero .valueHero{font-size:40px;}
+}
+@media(max-width:420px){
+  .planHero .valueHero{font-size:30px;}
+}
+
 
 
 
