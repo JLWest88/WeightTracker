@@ -228,40 +228,20 @@ section.card .controlsRow label{
   line-height:1.25;
 }
 
-/* Remaining uses the exact same styling as the planHero value */
-#reqRemainingAvg{
-  font-size:inherit;
-  font-weight:inherit;
-  letter-spacing:inherit;
-  line-height:inherit;
-}
 /* If anything strips the usual .value styling, this guarantees hero sizing */
-.planHero .valueHero{
+.card.plan .planHero .value{
   font-size:34px;
   font-weight:900;
   letter-spacing:.3px;
   line-height:1.05;
 }
-@media(min-width:760px){
-  .planHero .valueHero{font-size:40px;}
-}
-@media(max-width:420px){
-  .planHero .valueHero{font-size:30px;}
-}
-/* FORCE remaining to match the Plan hero sizing, regardless of class/cascade */
-#reqRemainingAvg{
-  font-size:34px !important;
-  font-weight:900 !important;
-  letter-spacing:.3px !important;
-  line-height:1.05 !important;
-}
 
 @media(min-width:760px){
-  #reqRemainingAvg{ font-size:40px !important; }
+  .card.plan .planHero .value{font-size:40px;}
 }
 
 @media(max-width:420px){
-  #reqRemainingAvg{ font-size:30px !important; }
+  .card.plan .planHero .value{font-size:30px;}
 }
 
 
