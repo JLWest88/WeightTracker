@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
-const APP_VERSION = "2026-02-14.9";
+const APP_VERSION = "2026-02-14.1";
 
 // ---------- DOM ----------
 const appVersionEl = document.getElementById("appVersion");
@@ -354,6 +354,95 @@ function requiredRemainingAvgDaily(entries, fISO, target7Avg) {
   return { req, elapsedDays, remainingDays, knownCount, missingElapsed, fEndISO, progressISO };
 }
 
+function cutPlanStatus(entries, fISO, goal) {
+  const goalGap = Math.abs(goal);
+  const byDay = dailyWeightsMap(entries);
+
+  const fStart = fISO;
+  const fEndISO = dateToISO(addDays(isoToDate(fISO), 6));
+  const today = todayISO();
+  const progressISO = clampISO(today, fStart, fEndISO);
+
+  const elapsedDays = diffDays(fStart, progressISO) + 1;
+  const remainingDays = 7 - elapsedDays;
+
+  let sumGaps = 0;
+  let completedDays = 0;
+  let missingElapsed = 0;
+
+  for (let i = 0; i < elapsedDays; i++) {
+    const planDayISO = dateToISO(addDays(isoToDate(fStart), i));
+    const dropISO = dateToISO(addDays(isoToDate(planDayISO), -7));
+
+    const actual = byDay.get(planDayISO);
+    const drop = byDay.get(dropISO);
+
+    if (
+      typeof actual === "number" && Number.isFinite(actual) &&
+      typeof drop === "number" && Number.isFinite(drop)
+    ) {
+      sumGaps += (drop - actual);
+      completedDays++;
+    } else {
+      missingElapsed++;
+    }
+  }
+
+  const nextPlanDayISO = dateToISO(addDays(isoToDate(fStart), elapsedDays));
+  const nextDropISO = dateToISO(addDays(isoToDate(nextPlanDayISO), -7));
+  const nextDropWeight = byDay.get(nextDropISO);
+
+  let currentPace = null;
+  if (completedDays > 0) {
+    currentPace = -(sumGaps / completedDays);
+  }
+
+  let requiredGap = null;
+  let targetNextWeight = null;
+
+  if (
+    remainingDays > 0 &&
+    typeof nextDropWeight === "number" &&
+    Number.isFinite(nextDropWeight)
+  ) {
+    requiredGap = goalGap * (completedDays + 1) - sumGaps;
+
+    const minGap = 0;
+    const maxGap = goalGap * 2;
+    requiredGap = Math.max(minGap, Math.min(maxGap, requiredGap));
+
+    targetNextWeight = nextDropWeight - requiredGap;
+  }
+
+  return {
+    goalGap,
+    fEndISO,
+    progressISO,
+    elapsedDays,
+    remainingDays,
+    completedDays,
+    missingElapsed,
+    sumGaps,
+    currentPace,
+    nextPlanDayISO,
+    nextDropISO,
+    nextDropWeight,
+    requiredGap,
+    targetNextWeight
+  };
+}
+
+function formatPaceStatus(currentPace, goal) {
+  if (currentPace == null) return "Not enough data yet.";
+
+  const target = goal; // negative number for cut
+  const diff = currentPace - target;
+
+  if (diff <= -0.3) return "Faster than target pace.";
+  if (diff >= 0.3) return "Slower than target pace.";
+  return "Near target pace.";
+}
+
 // ---------- EDIT MODE ----------
 function enterEditMode() {
   addBtn.textContent = "Update entry";
@@ -464,46 +553,82 @@ function render() {
   }
   if (planTodayEl) planTodayEl.textContent = formatISO(todayISO());
 
-  // Plan estimator #1: target next-7 avg starting at F
+  // Plan estimator section
   const est = requiredNext7AvgForF(entries, fISO, goalDelta7);
   const target7 = est.req;
 
-  if (reqNext7AvgEl) reqNext7AvgEl.textContent = (target7 == null) ? "—" : round1(target7).toFixed(1);
+  // CUT MODE: replace the two plan outputs with Target Next-Day Weight + Current Pace
+  if (goalDelta7 < 0) {
+    const cut = cutPlanStatus(entries, fISO, goalDelta7);
 
-  if (reqNext7HintEl) {
-    if (target7 == null) {
-      reqNext7HintEl.textContent = `Needs at least 1 weigh-in in the 7-day window ending on ${formatISO(fISO)}.`;
-    } else {
-      const cov = `${est.countAtF}/7`;
-      reqNext7HintEl.textContent =
-        `Based on MA7 at ${formatISO(fISO)} (${round1(est.ma7AtF).toFixed(1)}, coverage ${cov}). Target 7-day average for the plan window is ${round1(target7).toFixed(1)}.`;
+    if (reqNext7AvgEl) {
+      reqNext7AvgEl.textContent =
+        (cut.targetNextWeight == null) ? "—" : `${round1(cut.targetNextWeight).toFixed(1)} or lower`;
+    }
+
+    if (reqNext7HintEl) {
+      if (cut.remainingDays === 0) {
+        reqNext7HintEl.textContent = "Plan window ended today.";
+      } else if (cut.targetNextWeight == null) {
+        reqNext7HintEl.textContent =
+          `Needs a logged weight for the next drop-off date (${formatISO(cut.nextDropISO)}) to calculate tomorrow's target.`;
+      } else {
+        reqNext7HintEl.textContent =
+          `Next day: ${formatISO(cut.nextPlanDayISO)}. Drop-off: ${round1(cut.nextDropWeight).toFixed(1)} from ${formatISO(cut.nextDropISO)}. Required gap: ${round1(cut.requiredGap).toFixed(1)}.`;
+      }
+    }
+
+    if (reqRemainingAvgEl) {
+      reqRemainingAvgEl.textContent =
+        (cut.currentPace == null) ? "—" : `${formatDelta(cut.currentPace)} lb/week`;
+    }
+
+    if (reqRemainingHintEl) {
+      const loggedText = `${cut.completedDays}/${cut.elapsedDays} elapsed day(s) usable`;
+      const missText = cut.missingElapsed > 0 ? ` (missing ${cut.missingElapsed})` : "";
+      reqRemainingHintEl.textContent =
+        `${loggedText}${missText}. Remaining: ${cut.remainingDays} day(s). ${formatPaceStatus(cut.currentPace, goalDelta7)}`;
     }
   }
 
-  // Plan estimator #2: required avg for remaining plan days (uses TODAY; shows coverage)
-  if (reqRemainingAvgEl && reqRemainingHintEl) {
-    if (target7 == null) {
-      reqRemainingAvgEl.textContent = "—";
-      reqRemainingHintEl.textContent = "Compute the target next-7 average first (it depends on MA7 at F).";
-    } else {
-      const r = requiredRemainingAvgDaily(entries, fISO, target7);
+  // GAIN / MAINTAIN MODE: keep the current system
+  else {
+    if (reqNext7AvgEl) reqNext7AvgEl.textContent = (target7 == null) ? "—" : round1(target7).toFixed(1);
 
-      if (r.remainingDays === 0) {
-        reqRemainingAvgEl.textContent = "—";
-        if (r.knownCount === 7 && r.achievedIfAllKnown != null) {
-          reqRemainingHintEl.textContent =
-            `Plan window ended today. Achieved 7-day average: ${round1(r.achievedIfAllKnown).toFixed(1)} (target was ${round1(target7).toFixed(1)}).`;
-        } else {
-          reqRemainingHintEl.textContent =
-            `Plan window ended today. Coverage during plan: ${r.knownCount}/7 days logged (missing ${r.missingElapsed}).`;
-        }
+    if (reqNext7HintEl) {
+      if (target7 == null) {
+        reqNext7HintEl.textContent = `Needs at least 1 weigh-in in the 7-day window ending on ${formatISO(fISO)}.`;
       } else {
-        reqRemainingAvgEl.textContent = round1(r.req).toFixed(1);
+        const cov = `${est.countAtF}/7`;
+        reqNext7HintEl.textContent =
+          `Based on MA7 at ${formatISO(fISO)} (${round1(est.ma7AtF).toFixed(1)}, coverage ${cov}). Target 7-day average for the plan window is ${round1(target7).toFixed(1)}.`;
+      }
+    }
 
-        const covText = `${r.knownCount}/${r.elapsedDays} elapsed day(s) logged`;
-        const missText = (r.missingElapsed > 0) ? ` (missing ${r.missingElapsed})` : "";
-        reqRemainingHintEl.textContent =
-          `So far: ${covText}${missText}. Remaining: ${r.remainingDays} day(s). Assumes 1 weigh-in per remaining day to hit the plan-window target (${round1(target7).toFixed(1)}).`;
+    if (reqRemainingAvgEl && reqRemainingHintEl) {
+      if (target7 == null) {
+        reqRemainingAvgEl.textContent = "—";
+        reqRemainingHintEl.textContent = "Compute the target next-7 average first (it depends on MA7 at F).";
+      } else {
+        const r = requiredRemainingAvgDaily(entries, fISO, target7);
+
+        if (r.remainingDays === 0) {
+          reqRemainingAvgEl.textContent = "—";
+          if (r.knownCount === 7 && r.achievedIfAllKnown != null) {
+            reqRemainingHintEl.textContent =
+              `Plan window ended today. Achieved 7-day average: ${round1(r.achievedIfAllKnown).toFixed(1)} (target was ${round1(target7).toFixed(1)}).`;
+          } else {
+            reqRemainingHintEl.textContent =
+              `Plan window ended today. Coverage during plan: ${r.knownCount}/7 days logged (missing ${r.missingElapsed}).`;
+          }
+        } else {
+          reqRemainingAvgEl.textContent = round1(r.req).toFixed(1);
+
+          const covText = `${r.knownCount}/${r.elapsedDays} elapsed day(s) logged`;
+          const missText = (r.missingElapsed > 0) ? ` (missing ${r.missingElapsed})` : "";
+          reqRemainingHintEl.textContent =
+            `So far: ${covText}${missText}. Remaining: ${r.remainingDays} day(s). Assumes 1 weigh-in per remaining day to hit the plan-window target (${round1(target7).toFixed(1)}).`;
+        }
       }
     }
   }
