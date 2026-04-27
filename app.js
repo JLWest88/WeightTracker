@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
-const APP_VERSION = "2026-04-26.1";
+const APP_VERSION = "2026-04-26.2";
 
 // ---------- DOM ----------
 const appVersionEl = document.getElementById("appVersion");
@@ -34,6 +34,9 @@ const fPrevBtn = document.getElementById("asOfPrev");
 const fNextBtn = document.getElementById("asOfNext");
 const fSelect = document.getElementById("asOfSelect");
 const goalInput = document.getElementById("goalDelta7");
+
+const reqNext7TitleEl = document.getElementById("reqNext7Title");
+const reqRemainingTitleEl = document.getElementById("reqRemainingTitle");
 
 const reqNext7AvgEl = document.getElementById("reqNext7Avg");
 const reqNext7HintEl = document.getElementById("reqNext7Hint");
@@ -559,6 +562,9 @@ function render() {
 
   // CUT MODE: replace the two plan outputs with Target Next-Day Weight + Current Pace
   if (goalDelta7 < 0) {
+    if (reqNext7TitleEl) reqNext7TitleEl.textContent = "Target next-day weight";
+    if (reqRemainingTitleEl) reqRemainingTitleEl.textContent = "Current pace";
+
     const cut = cutPlanStatus(entries, fISO, goalDelta7);
 
     if (reqNext7AvgEl) {
@@ -593,7 +599,12 @@ function render() {
 
   // GAIN / MAINTAIN MODE: keep the current system
   else {
-    if (reqNext7AvgEl) reqNext7AvgEl.textContent = (target7 == null) ? "—" : round1(target7).toFixed(1);
+    if (reqNext7TitleEl) reqNext7TitleEl.textContent = "Target next-7 average";
+    if (reqRemainingTitleEl) reqRemainingTitleEl.textContent = "Required average for the rest of this plan";
+
+    if (reqNext7AvgEl) {
+      reqNext7AvgEl.textContent = (target7 == null) ? "—" : round1(target7).toFixed(1);
+    }
 
     if (reqNext7HintEl) {
       if (target7 == null) {
