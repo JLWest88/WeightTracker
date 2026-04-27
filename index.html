@@ -100,14 +100,14 @@
 
         <!-- Hero: target next-7 avg (starting at F) -->
         <div class="card metric planHero" style="margin-top:12px;">
-          <div class="label">Target next-7 average</div>
+          <div class="label" id="reqNext7Title">Target next-7 average</div>
           <div class="value" id="reqNext7Avg">—</div>
           <div class="tiny muted" id="reqNext7Hint" style="margin-top:6px;">—</div>
         </div>
 
         <!-- NEW: remaining-days calculator (uses TODAY for progress) -->
         <div class="card metric planHero" style="margin-top:12px;">
-          <div class="label">Required average for the rest of this plan</div>
+          <div class="label" id="reqRemainingTitle">Required average for the rest of this plan</div>
 <div class="value valueHero" id="reqRemainingAvg">—</div>
           <div class="tiny muted" id="reqRemainingHint" style="margin-top:6px;">—</div>
         </div>
@@ -236,7 +236,7 @@
     </main>
 
     <!-- Cache-bust version -->
-    <script src="app.js?v=20260426.1"></script>
+    <script src="app.js?v=20260426.2"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
