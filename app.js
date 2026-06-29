@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
-const APP_VERSION = "2026-04-26.2";
+const APP_VERSION = "2026-06-28.1";
 
 // ---------- DOM ----------
 const appVersionEl = document.getElementById("appVersion");
@@ -302,13 +302,6 @@ function computeDashboardMetrics(entries, endISO) {
   };
 }
 
-// Target next-7 avg driven by F
-function requiredNext7AvgForF(entries, fISO, goal) {
-  const mF = computeDashboardMetrics(entries, fISO);
-  if (mF.ma7 == null) return { req: null, ma7AtF: null, countAtF: mF.ma7Count };
-  return { req: mF.ma7 + goal, ma7AtF: mF.ma7, countAtF: mF.ma7Count };
-}
-
 // Daily weights (latest per day wins)
 function dailyWeightsMap(entries) {
   const byDate = new Map();
@@ -317,133 +310,74 @@ function dailyWeightsMap(entries) {
   return byDate;
 }
 
-// Remaining-days required average (uses TODAY for progress; shows coverage)
-function requiredRemainingAvgDaily(entries, fISO, target7Avg) {
-  const fStart = fISO;
-  const fEndISO = dateToISO(addDays(isoToDate(fISO), 6));
-  const today = todayISO();
-
-  // progress is based on real today, clamped into plan window
-  const progressISO = clampISO(today, fStart, fEndISO);
-  const elapsedDays = diffDays(fStart, progressISO) + 1; // 1..7
-  const remainingDays = 7 - elapsedDays; // 6..0
-
+// Target weight for the SELECTED day F (anchored to F, never to "today").
+// goal is signed: negative = cut, 0 = maintain, positive = gain.
+// To stay on weekly pace, your weight on day F should be the weight from
+// exactly 7 days earlier (the "drop-off" day) plus the weekly goal.
+function planTargetForDay(entries, fISO, goal) {
   const byDay = dailyWeightsMap(entries);
 
-  let sumKnown = 0;
-  let knownCount = 0;
+  const dropISO = dateToISO(addDays(isoToDate(fISO), -7));
+  const dropWeight = byDay.get(dropISO);
+  const hasDrop = typeof dropWeight === "number" && Number.isFinite(dropWeight);
 
-  for (let i = 0; i < elapsedDays; i++) {
-    const dayISO = dateToISO(addDays(isoToDate(fStart), i));
-    const w = byDay.get(dayISO);
-    if (typeof w === "number" && Number.isFinite(w)) {
-      sumKnown += w;
-      knownCount++;
-    }
-  }
-
-  const missingElapsed = elapsedDays - knownCount;
-
-  if (remainingDays === 0) {
-    const achievedIfAllKnown = (knownCount === 7) ? (sumKnown / 7) : null;
-    return { req: null, elapsedDays, remainingDays, knownCount, missingElapsed, achievedIfAllKnown, fEndISO, progressISO };
-  }
-
-  // Assumes 1 weigh-in per remaining day (denominator = remainingDays)
-  const totalTargetSum = target7Avg * 7;
-  const remainingTargetSum = totalTargetSum - sumKnown;
-  const req = remainingTargetSum / remainingDays;
-
-  return { req, elapsedDays, remainingDays, knownCount, missingElapsed, fEndISO, progressISO };
-}
-
-function cutPlanStatus(entries, fISO, goal) {
-  const goalGap = Math.abs(goal);
-  const byDay = dailyWeightsMap(entries);
-
-  const fStart = fISO;
-  const fEndISO = dateToISO(addDays(isoToDate(fISO), 6));
-  const today = todayISO();
-  const progressISO = clampISO(today, fStart, fEndISO);
-
-  const elapsedDays = diffDays(fStart, progressISO) + 1;
-  const remainingDays = 7 - elapsedDays;
-
-  let sumGaps = 0;
-  let completedDays = 0;
-  let missingElapsed = 0;
-
-  for (let i = 0; i < elapsedDays; i++) {
-    const planDayISO = dateToISO(addDays(isoToDate(fStart), i));
-    const dropISO = dateToISO(addDays(isoToDate(planDayISO), -7));
-
-    const actual = byDay.get(planDayISO);
-    const drop = byDay.get(dropISO);
-
-    if (
-      typeof actual === "number" && Number.isFinite(actual) &&
-      typeof drop === "number" && Number.isFinite(drop)
-    ) {
-      sumGaps += (drop - actual);
-      completedDays++;
-    } else {
-      missingElapsed++;
-    }
-  }
-
-  const nextPlanDayISO = dateToISO(addDays(isoToDate(fStart), elapsedDays));
-  const nextDropISO = dateToISO(addDays(isoToDate(nextPlanDayISO), -7));
-  const nextDropWeight = byDay.get(nextDropISO);
-
-  let currentPace = null;
-  if (completedDays > 0) {
-    currentPace = -(sumGaps / completedDays);
-  }
-
-  let requiredGap = null;
-  let targetNextWeight = null;
-
-  if (
-    remainingDays > 0 &&
-    typeof nextDropWeight === "number" &&
-    Number.isFinite(nextDropWeight)
-  ) {
-    requiredGap = goalGap * (completedDays + 1) - sumGaps;
-
-    const minGap = 0;
-    const maxGap = goalGap * 2;
-    requiredGap = Math.max(minGap, Math.min(maxGap, requiredGap));
-
-    targetNextWeight = nextDropWeight - requiredGap;
-  }
+  const actual = byDay.get(fISO);
+  const hasActual = typeof actual === "number" && Number.isFinite(actual);
 
   return {
-    goalGap,
-    fEndISO,
-    progressISO,
-    elapsedDays,
-    remainingDays,
-    completedDays,
-    missingElapsed,
-    sumGaps,
-    currentPace,
-    nextPlanDayISO,
-    nextDropISO,
-    nextDropWeight,
-    requiredGap,
-    targetNextWeight
+    fISO,
+    dropISO,
+    dropWeight: hasDrop ? dropWeight : null,
+    targetWeight: hasDrop ? (dropWeight + goal) : null,
+    actualWeight: hasActual ? actual : null
   };
 }
 
-function formatPaceStatus(currentPace, goal) {
-  if (currentPace == null) return "Not enough data yet.";
+// Recent pace: average week-over-week change across the 7 days ENDING the day
+// before F (i.e. F-7 .. F-1). Signed lb/week (negative = losing). Anchored to F.
+function planRecentPace(entries, fISO) {
+  const byDay = dailyWeightsMap(entries);
 
-  const target = goal; // negative number for cut
-  const diff = currentPace - target;
+  let sum = 0;
+  let usableDays = 0;
+  let windowDays = 0;
 
-  if (diff <= -0.3) return "Faster than target pace.";
-  if (diff >= 0.3) return "Slower than target pace.";
-  return "Near target pace.";
+  for (let i = 7; i >= 1; i--) {
+    const dISO = dateToISO(addDays(isoToDate(fISO), -i));      // F-7 .. F-1
+    const prevISO = dateToISO(addDays(isoToDate(fISO), -i - 7)); // d - 7
+    windowDays++;
+
+    const w = byDay.get(dISO);
+    const wPrev = byDay.get(prevISO);
+    if (
+      typeof w === "number" && Number.isFinite(w) &&
+      typeof wPrev === "number" && Number.isFinite(wPrev)
+    ) {
+      sum += (w - wPrev);
+      usableDays++;
+    }
+  }
+
+  return {
+    pace: usableDays > 0 ? (sum / usableDays) : null,
+    usableDays,
+    windowDays
+  };
+}
+
+function formatPaceStatus(pace, goal) {
+  if (pace == null) return "Not enough data yet.";
+
+  if (goal === 0) {
+    if (Math.abs(pace) <= 0.3) return "Holding steady (near maintenance).";
+    return pace < 0 ? "Trending down." : "Trending up.";
+  }
+
+  // Positive "ahead" means doing better than the goal in the goal's direction.
+  const ahead = (goal < 0) ? (goal - pace) : (pace - goal);
+  if (ahead >= 0.3) return "Ahead of target pace.";
+  if (ahead <= -0.3) return "Behind target pace.";
+  return "On target pace.";
 }
 
 // ---------- EDIT MODE ----------
@@ -549,99 +483,59 @@ function render() {
     if (covPrevEl) covPrevEl.textContent = `${cPrev}/${s.n}`;
   }
 
-  // Plan window line (F → F+6) + today
+  // Plan header line: the selected target day (F) and its drop-off day (F-7).
   if (planWindowRangeEl) {
-    const fEndISO = dateToISO(addDays(isoToDate(fISO), 6));
-    planWindowRangeEl.textContent = `${formatISO(fISO)} → ${formatISO(fEndISO)}`;
+    const dropISO = dateToISO(addDays(isoToDate(fISO), -7));
+    planWindowRangeEl.textContent =
+      `Target day ${formatISO(fISO)} • drops off ${formatISO(dropISO)}`;
   }
   if (planTodayEl) planTodayEl.textContent = formatISO(todayISO());
 
-  // Plan estimator section
-  const est = requiredNext7AvgForF(entries, fISO, goalDelta7);
-  const target7 = est.req;
+  // Plan estimator — unified across cut / maintain / gain, anchored to F.
+  const tgt = planTargetForDay(entries, fISO, goalDelta7);
+  const pace = planRecentPace(entries, fISO);
 
-  // CUT MODE: replace the two plan outputs with Target Next-Day Weight + Current Pace
-  if (goalDelta7 < 0) {
-    if (reqNext7TitleEl) reqNext7TitleEl.textContent = "Target next-day weight";
-    if (reqRemainingTitleEl) reqRemainingTitleEl.textContent = "Current pace";
+  // Direction word for the target ("or lower" for a cut, "or higher" for a gain).
+  const dirWord = goalDelta7 < 0 ? "or lower" : (goalDelta7 > 0 ? "or higher" : "");
 
-    const cut = cutPlanStatus(entries, fISO, goalDelta7);
+  // --- Top card: target weight for the selected day ---
+  if (reqNext7TitleEl) reqNext7TitleEl.textContent = `Target weight for ${formatISO(fISO)}`;
 
-    if (reqNext7AvgEl) {
-      reqNext7AvgEl.textContent =
-        (cut.targetNextWeight == null) ? "—" : `${round1(cut.targetNextWeight).toFixed(1)} or lower`;
-    }
-
-    if (reqNext7HintEl) {
-      if (cut.remainingDays === 0) {
-        reqNext7HintEl.textContent = "Plan window ended today.";
-      } else if (cut.targetNextWeight == null) {
-        reqNext7HintEl.textContent =
-          `Needs a logged weight for the next drop-off date (${formatISO(cut.nextDropISO)}) to calculate tomorrow's target.`;
-      } else {
-        reqNext7HintEl.textContent =
-          `Next day: ${formatISO(cut.nextPlanDayISO)}. Drop-off: ${round1(cut.nextDropWeight).toFixed(1)} from ${formatISO(cut.nextDropISO)}. Required gap: ${round1(cut.requiredGap).toFixed(1)}.`;
-      }
-    }
-
-    if (reqRemainingAvgEl) {
-      reqRemainingAvgEl.textContent =
-        (cut.currentPace == null) ? "—" : `${formatDelta(cut.currentPace)} lb/week`;
-    }
-
-    if (reqRemainingHintEl) {
-      const loggedText = `${cut.completedDays}/${cut.elapsedDays} elapsed day(s) usable`;
-      const missText = cut.missingElapsed > 0 ? ` (missing ${cut.missingElapsed})` : "";
-      reqRemainingHintEl.textContent =
-        `${loggedText}${missText}. Remaining: ${cut.remainingDays} day(s). ${formatPaceStatus(cut.currentPace, goalDelta7)}`;
+  if (reqNext7AvgEl) {
+    if (tgt.targetWeight == null) {
+      reqNext7AvgEl.textContent = "—";
+    } else {
+      const num = round1(tgt.targetWeight).toFixed(1);
+      reqNext7AvgEl.textContent = dirWord ? `${num} ${dirWord}` : num;
     }
   }
 
-  // GAIN / MAINTAIN MODE: keep the current system
-  else {
-    if (reqNext7TitleEl) reqNext7TitleEl.textContent = "Target next-7 average";
-    if (reqRemainingTitleEl) reqRemainingTitleEl.textContent = "Required average for the rest of this plan";
-
-    if (reqNext7AvgEl) {
-      reqNext7AvgEl.textContent = (target7 == null) ? "—" : round1(target7).toFixed(1);
-    }
-
-    if (reqNext7HintEl) {
-      if (target7 == null) {
-        reqNext7HintEl.textContent = `Needs at least 1 weigh-in in the 7-day window ending on ${formatISO(fISO)}.`;
-      } else {
-        const cov = `${est.countAtF}/7`;
-        reqNext7HintEl.textContent =
-          `Based on MA7 at ${formatISO(fISO)} (${round1(est.ma7AtF).toFixed(1)}, coverage ${cov}). Target 7-day average for the plan window is ${round1(target7).toFixed(1)}.`;
+  if (reqNext7HintEl) {
+    if (tgt.targetWeight == null) {
+      reqNext7HintEl.textContent =
+        `Needs a logged weight on the drop-off date (${formatISO(tgt.dropISO)}) to compute the target for ${formatISO(fISO)}.`;
+    } else {
+      let line =
+        `Drop-off ${formatISO(tgt.dropISO)} was ${round1(tgt.dropWeight).toFixed(1)}. ` +
+        `With a Δ7 goal of ${formatDelta(goalDelta7)}, the target for ${formatISO(fISO)} is ${round1(tgt.targetWeight).toFixed(1)}.`;
+      if (tgt.actualWeight != null) {
+        line += ` Logged for ${formatISO(fISO)}: ${round1(tgt.actualWeight).toFixed(1)} (${formatDelta(tgt.actualWeight - tgt.targetWeight)} vs target).`;
       }
+      reqNext7HintEl.textContent = line;
     }
+  }
 
-    if (reqRemainingAvgEl && reqRemainingHintEl) {
-      if (target7 == null) {
-        reqRemainingAvgEl.textContent = "—";
-        reqRemainingHintEl.textContent = "Compute the target next-7 average first (it depends on MA7 at F).";
-      } else {
-        const r = requiredRemainingAvgDaily(entries, fISO, target7);
+  // --- Second card: recent pace (week-over-week change leading up to F) ---
+  if (reqRemainingTitleEl) reqRemainingTitleEl.textContent = "Recent pace";
 
-        if (r.remainingDays === 0) {
-          reqRemainingAvgEl.textContent = "—";
-          if (r.knownCount === 7 && r.achievedIfAllKnown != null) {
-            reqRemainingHintEl.textContent =
-              `Plan window ended today. Achieved 7-day average: ${round1(r.achievedIfAllKnown).toFixed(1)} (target was ${round1(target7).toFixed(1)}).`;
-          } else {
-            reqRemainingHintEl.textContent =
-              `Plan window ended today. Coverage during plan: ${r.knownCount}/7 days logged (missing ${r.missingElapsed}).`;
-          }
-        } else {
-          reqRemainingAvgEl.textContent = round1(r.req).toFixed(1);
+  if (reqRemainingAvgEl) {
+    reqRemainingAvgEl.textContent =
+      (pace.pace == null) ? "—" : `${formatDelta(pace.pace)} lb/week`;
+  }
 
-          const covText = `${r.knownCount}/${r.elapsedDays} elapsed day(s) logged`;
-          const missText = (r.missingElapsed > 0) ? ` (missing ${r.missingElapsed})` : "";
-          reqRemainingHintEl.textContent =
-            `So far: ${covText}${missText}. Remaining: ${r.remainingDays} day(s). Assumes 1 weigh-in per remaining day to hit the plan-window target (${round1(target7).toFixed(1)}).`;
-        }
-      }
-    }
+  if (reqRemainingHintEl) {
+    const cov = `${pace.usableDays}/${pace.windowDays} day(s) in the week before ${formatISO(fISO)} usable`;
+    reqRemainingHintEl.textContent = `${cov}. ${formatPaceStatus(pace.pace, goalDelta7)}`;
   }
 
   // Entries list (latest first)

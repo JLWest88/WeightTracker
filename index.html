@@ -76,7 +76,7 @@
 
         <!-- Plan window range (F → F+6) -->
         <div class="tiny muted" id="planWindowLine" style="margin:-2px 0 12px;">
-          Plan window: <span id="planWindowRange">—</span>
+          <span id="planWindowRange">—</span>
           <span class="muted" style="margin-left:10px;">Today: <span id="planToday">—</span></span>
         </div>
 
@@ -236,7 +236,7 @@
     </main>
 
     <!-- Cache-bust version -->
-    <script src="app.js?v=20260426.2"></script>
+    <script src="app.js?v=20260628.1"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
