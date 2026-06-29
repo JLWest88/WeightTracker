@@ -81,14 +81,29 @@
         </div>
 
         <div class="controlsRow">
-          <button id="asOfPrev" class="ghost" type="button" title="Previous entry date">◀</button>
+          <button id="asOfPrev" class="ghost" type="button" title="Previous start date">◀</button>
 
           <label style="flex:1; min-width:160px;">
-            Plan From (F)
+            Plan starts (F)
             <select id="asOfSelect"></select>
           </label>
 
-          <button id="asOfNext" class="ghost" type="button" title="Next entry date">▶</button>
+          <button id="asOfNext" class="ghost" type="button" title="Next start date">▶</button>
+        </div>
+
+        <div class="controlsRow" style="margin-top:12px;">
+          <button id="tPrev" class="ghost" type="button" title="Previous day in plan week">◀</button>
+
+          <label style="flex:1; min-width:160px;">
+            Target day
+            <select id="tSelect"></select>
+          </label>
+
+          <button id="tNext" class="ghost" type="button" title="Next day in plan week">▶</button>
+        </div>
+
+        <div class="tiny muted" style="margin:8px 0 0;">
+          Defaults to your next un-logged day. Move it to peek at any day in the week.
         </div>
 
         <div class="controlsRow" style="margin-top:12px;">
@@ -98,16 +113,16 @@
           </label>
         </div>
 
-        <!-- Hero: target next-7 avg (starting at F) -->
+        <!-- Hero: target weight for the selected Target day -->
         <div class="card metric planHero" style="margin-top:12px;">
-          <div class="label" id="reqNext7Title">Target next-7 average</div>
+          <div class="label" id="reqNext7Title">Target weight</div>
           <div class="value" id="reqNext7Avg">—</div>
           <div class="tiny muted" id="reqNext7Hint" style="margin-top:6px;">—</div>
         </div>
 
-        <!-- NEW: remaining-days calculator (uses TODAY for progress) -->
+        <!-- Plan-week pace: what the remaining days must average to hit the goal -->
         <div class="card metric planHero" style="margin-top:12px;">
-          <div class="label" id="reqRemainingTitle">Required average for the rest of this plan</div>
+          <div class="label" id="reqRemainingTitle">Pace needed to finish the week</div>
 <div class="value valueHero" id="reqRemainingAvg">—</div>
           <div class="tiny muted" id="reqRemainingHint" style="margin-top:6px;">—</div>
         </div>
@@ -236,7 +251,7 @@
     </main>
 
     <!-- Cache-bust version -->
-    <script src="app.js?v=20260628.1"></script>
+    <script src="app.js?v=20260628.2"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));

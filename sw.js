@@ -1,4 +1,4 @@
-const CACHE_NAME = "wt-cache-2026-06-28.1";
+const CACHE_NAME = "wt-cache-2026-06-28.2";
 const ASSETS = [
   "./",
   "./index.html",

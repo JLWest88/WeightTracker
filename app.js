@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
-const APP_VERSION = "2026-06-28.1";
+const APP_VERSION = "2026-06-28.2";
 
 // ---------- DOM ----------
 const appVersionEl = document.getElementById("appVersion");
@@ -29,10 +29,16 @@ const bPrevBtn = document.getElementById("bPrev");
 const bNextBtn = document.getElementById("bNext");
 const bSelect = document.getElementById("bSelect");
 
-// Plan (F)
+// Plan (F) — plan-week start
 const fPrevBtn = document.getElementById("asOfPrev");
 const fNextBtn = document.getElementById("asOfNext");
 const fSelect = document.getElementById("asOfSelect");
+
+// Plan (T) — which day in the plan week you're viewing
+const tPrevBtn = document.getElementById("tPrev");
+const tNextBtn = document.getElementById("tNext");
+const tSelect = document.getElementById("tSelect");
+
 const goalInput = document.getElementById("goalDelta7");
 
 const reqNext7TitleEl = document.getElementById("reqNext7Title");
@@ -56,8 +62,13 @@ let editingId = null;
 // B defaults to today each load (not persisted)
 let bISO = todayISO();
 
-// F persists
+// F (plan-week start) persists
 let fISO = loadPlanFrom() || todayISO();
+
+// T (target day within the plan week). Not persisted: defaults to the next
+// un-logged day in the week unless the user pins it with the Target selector.
+let tISO = null;
+let tManual = false;
 
 // Goal persists
 let goalDelta7 = loadGoalDelta7();
@@ -333,36 +344,55 @@ function planTargetForDay(entries, fISO, goal) {
   };
 }
 
-// Recent pace: average week-over-week change across the 7 days ENDING the day
-// before F (i.e. F-7 .. F-1). Signed lb/week (negative = losing). Anchored to F.
-function planRecentPace(entries, fISO) {
+// The 7 calendar days of a plan week starting at F.
+function planWeekDays(fISO) {
+  const out = [];
+  for (let i = 0; i < 7; i++) out.push(dateToISO(addDays(isoToDate(fISO), i)));
+  return out;
+}
+
+// Smart default for the Target day: the first day in the plan week with no
+// logged weight yet. If all 7 are logged, fall back to the last day.
+function nextUnloggedInWeek(entries, fISO) {
   const byDay = dailyWeightsMap(entries);
-
-  let sum = 0;
-  let usableDays = 0;
-  let windowDays = 0;
-
-  for (let i = 7; i >= 1; i--) {
-    const dISO = dateToISO(addDays(isoToDate(fISO), -i));      // F-7 .. F-1
-    const prevISO = dateToISO(addDays(isoToDate(fISO), -i - 7)); // d - 7
-    windowDays++;
-
+  const days = planWeekDays(fISO);
+  for (const dISO of days) {
     const w = byDay.get(dISO);
-    const wPrev = byDay.get(prevISO);
-    if (
-      typeof w === "number" && Number.isFinite(w) &&
-      typeof wPrev === "number" && Number.isFinite(wPrev)
-    ) {
-      sum += (w - wPrev);
-      usableDays++;
-    }
+    if (!(typeof w === "number" && Number.isFinite(w))) return dISO;
+  }
+  return days[days.length - 1];
+}
+
+// Whole-plan-week status, in terms of Δ7 (each day vs the same day 7 days
+// earlier). The weekly Δ7 goal IS the average of those daily gaps, so:
+//   - currentPace        = average gap over the days already scored
+//   - requiredRemaining  = average gap the remaining days must hit so the
+//                          full 7-day average still equals the goal
+// goal is signed (negative = cut). Anchored to F + logged data, never today.
+function planWeekStatus(entries, fISO, goal) {
+  const byDay = dailyWeightsMap(entries);
+  const days = planWeekDays(fISO);
+
+  let sumGap = 0;
+  let scored = 0;     // days with both the day and its drop-off logged
+  let loggedCount = 0; // days with a weight logged (drop-off may be missing)
+
+  for (const dISO of days) {
+    const dropISO = dateToISO(addDays(isoToDate(dISO), -7));
+    const w = byDay.get(dISO);
+    const drop = byDay.get(dropISO);
+    const hasW = typeof w === "number" && Number.isFinite(w);
+    const hasDrop = typeof drop === "number" && Number.isFinite(drop);
+    if (hasW) loggedCount++;
+    if (hasW && hasDrop) { sumGap += (w - drop); scored++; }
   }
 
-  return {
-    pace: usableDays > 0 ? (sum / usableDays) : null,
-    usableDays,
-    windowDays
-  };
+  const remaining = 7 - scored;
+  const currentPace = scored > 0 ? (sumGap / scored) : null;
+  const requiredRemaining = remaining > 0 ? ((7 * goal - sumGap) / remaining) : null;
+  const achieved = (scored === 7) ? (sumGap / 7) : null;
+
+  return { scored, loggedCount, remaining, currentPace, requiredRemaining, achieved };
 }
 
 function formatPaceStatus(pace, goal) {
@@ -445,6 +475,25 @@ function render() {
   if (bSelect) bSelect.value = bISO;
   if (fSelect) fSelect.value = fISO;
 
+  // Resolve the Target day (T) within the plan week. Auto-follow the next
+  // un-logged day unless the user pinned it; always clamp into [F, F+6].
+  const fEndISO = dateToISO(addDays(isoToDate(fISO), 6));
+  if (!tManual || tISO == null) tISO = nextUnloggedInWeek(entries, fISO);
+  tISO = clampISO(tISO, fISO, fEndISO);
+
+  // Populate the Target-day select with this week's 7 days (rebuild on window change).
+  if (tSelect) {
+    const weekDays = planWeekDays(fISO);
+    if (tSelect.dataset.weekStart !== fISO) {
+      tSelect.innerHTML = weekDays.map(iso => {
+        const label = (iso === todayISO()) ? `${formatISO(iso)} (Today)` : formatISO(iso);
+        return `<option value="${iso}">${label}</option>`;
+      }).join("");
+      tSelect.dataset.weekStart = fISO;
+    }
+    tSelect.value = tISO;
+  }
+
   // B display
   if (asOfDisplayEl) asOfDisplayEl.textContent = formatISO(bISO);
 
@@ -483,23 +532,19 @@ function render() {
     if (covPrevEl) covPrevEl.textContent = `${cPrev}/${s.n}`;
   }
 
-  // Plan header line: the selected target day (F) and its drop-off day (F-7).
+  // Plan header: the plan week (F → F+6) and today, for reference.
   if (planWindowRangeEl) {
-    const dropISO = dateToISO(addDays(isoToDate(fISO), -7));
-    planWindowRangeEl.textContent =
-      `Target day ${formatISO(fISO)} • drops off ${formatISO(dropISO)}`;
+    planWindowRangeEl.textContent = `Plan week ${formatISO(fISO)} → ${formatISO(fEndISO)}`;
   }
   if (planTodayEl) planTodayEl.textContent = formatISO(todayISO());
-
-  // Plan estimator — unified across cut / maintain / gain, anchored to F.
-  const tgt = planTargetForDay(entries, fISO, goalDelta7);
-  const pace = planRecentPace(entries, fISO);
 
   // Direction word for the target ("or lower" for a cut, "or higher" for a gain).
   const dirWord = goalDelta7 < 0 ? "or lower" : (goalDelta7 > 0 ? "or higher" : "");
 
-  // --- Top card: target weight for the selected day ---
-  if (reqNext7TitleEl) reqNext7TitleEl.textContent = `Target weight for ${formatISO(fISO)}`;
+  // --- Top card: target weight for the selected Target day (T) ---
+  const tgt = planTargetForDay(entries, tISO, goalDelta7);
+
+  if (reqNext7TitleEl) reqNext7TitleEl.textContent = `Target weight for ${formatISO(tISO)}`;
 
   if (reqNext7AvgEl) {
     if (tgt.targetWeight == null) {
@@ -513,29 +558,37 @@ function render() {
   if (reqNext7HintEl) {
     if (tgt.targetWeight == null) {
       reqNext7HintEl.textContent =
-        `Needs a logged weight on the drop-off date (${formatISO(tgt.dropISO)}) to compute the target for ${formatISO(fISO)}.`;
+        `Needs a logged weight on the drop-off date (${formatISO(tgt.dropISO)}) to compute the target for ${formatISO(tISO)}.`;
     } else {
       let line =
         `Drop-off ${formatISO(tgt.dropISO)} was ${round1(tgt.dropWeight).toFixed(1)}. ` +
-        `With a Δ7 goal of ${formatDelta(goalDelta7)}, the target for ${formatISO(fISO)} is ${round1(tgt.targetWeight).toFixed(1)}.`;
+        `With a Δ7 goal of ${formatDelta(goalDelta7)}, the target for ${formatISO(tISO)} is ${round1(tgt.targetWeight).toFixed(1)}.`;
       if (tgt.actualWeight != null) {
-        line += ` Logged for ${formatISO(fISO)}: ${round1(tgt.actualWeight).toFixed(1)} (${formatDelta(tgt.actualWeight - tgt.targetWeight)} vs target).`;
+        line += ` Logged: ${round1(tgt.actualWeight).toFixed(1)} (${formatDelta(tgt.actualWeight - tgt.targetWeight)} vs target).`;
       }
       reqNext7HintEl.textContent = line;
     }
   }
 
-  // --- Second card: recent pace (week-over-week change leading up to F) ---
-  if (reqRemainingTitleEl) reqRemainingTitleEl.textContent = "Recent pace";
+  // --- Second card: pace needed to finish the plan week ---
+  const wk = planWeekStatus(entries, fISO, goalDelta7);
+
+  if (reqRemainingTitleEl) reqRemainingTitleEl.textContent = "Pace needed to finish the week";
 
   if (reqRemainingAvgEl) {
     reqRemainingAvgEl.textContent =
-      (pace.pace == null) ? "—" : `${formatDelta(pace.pace)} lb/week`;
+      (wk.remaining === 0) ? "—" : `${formatDelta(wk.requiredRemaining)} lb/week`;
   }
 
   if (reqRemainingHintEl) {
-    const cov = `${pace.usableDays}/${pace.windowDays} day(s) in the week before ${formatISO(fISO)} usable`;
-    reqRemainingHintEl.textContent = `${cov}. ${formatPaceStatus(pace.pace, goalDelta7)}`;
+    if (wk.remaining === 0) {
+      reqRemainingHintEl.textContent =
+        `Plan week complete: all 7 days scored at ${formatDelta(wk.achieved)} lb/week (goal ${formatDelta(goalDelta7)}).`;
+    } else {
+      const paceText = (wk.currentPace == null) ? "no full days yet" : `${formatDelta(wk.currentPace)} lb/week`;
+      reqRemainingHintEl.textContent =
+        `Scored ${wk.scored}/7 day(s) so far (${paceText}). ${wk.remaining} day(s) left. ${formatPaceStatus(wk.currentPace, goalDelta7)}`;
+    }
   }
 
   // Entries list (latest first)
@@ -598,10 +651,12 @@ if (goalInput) {
   });
 }
 
-// Plan (F) controls
+// Plan (F) controls — moving the plan-week start resets the Target day to the
+// new week's smart default (clean slate).
 if (fPrevBtn) {
   fPrevBtn.addEventListener("click", () => {
     fISO = stepISO(fISO, -1);
+    tManual = false;
     savePlanFrom(fISO);
     render();
   });
@@ -609,6 +664,7 @@ if (fPrevBtn) {
 if (fNextBtn) {
   fNextBtn.addEventListener("click", () => {
     fISO = stepISO(fISO, +1);
+    tManual = false;
     savePlanFrom(fISO);
     render();
   });
@@ -616,9 +672,28 @@ if (fNextBtn) {
 if (fSelect) {
   fSelect.addEventListener("change", () => {
     fISO = fSelect.value || todayISO();
+    tManual = false;
     savePlanFrom(fISO);
     render();
   });
+}
+
+// Plan (T) controls — pick which day in the plan week to view; this pins the
+// Target day until F is moved again.
+function setTargetDay(iso) {
+  const fEndISO = dateToISO(addDays(isoToDate(fISO), 6));
+  tISO = clampISO(iso, fISO, fEndISO);
+  tManual = true;
+  render();
+}
+if (tPrevBtn) {
+  tPrevBtn.addEventListener("click", () => setTargetDay(stepISO(tISO || fISO, -1)));
+}
+if (tNextBtn) {
+  tNextBtn.addEventListener("click", () => setTargetDay(stepISO(tISO || fISO, +1)));
+}
+if (tSelect) {
+  tSelect.addEventListener("change", () => setTargetDay(tSelect.value || fISO));
 }
 
 // Dashboard (B) controls
