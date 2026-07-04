@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
-const APP_VERSION = "2026-06-28.2";
+const APP_VERSION = "2026-06-28.3";
 
 // ---------- DOM ----------
 const appVersionEl = document.getElementById("appVersion");
@@ -570,24 +570,24 @@ function render() {
     }
   }
 
-  // --- Second card: pace needed to finish the plan week ---
+  // --- Second card: current average pace so far this plan week ---
+  // (each scored day = your weight minus the weight 7 days earlier, averaged).
   const wk = planWeekStatus(entries, fISO, goalDelta7);
 
-  if (reqRemainingTitleEl) reqRemainingTitleEl.textContent = "Pace needed to finish the week";
+  if (reqRemainingTitleEl) reqRemainingTitleEl.textContent = "Current pace";
 
   if (reqRemainingAvgEl) {
     reqRemainingAvgEl.textContent =
-      (wk.remaining === 0) ? "—" : `${formatDelta(wk.requiredRemaining)} lb/week`;
+      (wk.currentPace == null) ? "—" : `${formatDelta(wk.currentPace)} lb/week`;
   }
 
   if (reqRemainingHintEl) {
-    if (wk.remaining === 0) {
+    if (wk.currentPace == null) {
       reqRemainingHintEl.textContent =
-        `Plan week complete: all 7 days scored at ${formatDelta(wk.achieved)} lb/week (goal ${formatDelta(goalDelta7)}).`;
+        `No fully-scored days yet this week (needs a logged weight plus its drop-off 7 days earlier). ${wk.remaining} day(s) left.`;
     } else {
-      const paceText = (wk.currentPace == null) ? "no full days yet" : `${formatDelta(wk.currentPace)} lb/week`;
       reqRemainingHintEl.textContent =
-        `Scored ${wk.scored}/7 day(s) so far (${paceText}). ${wk.remaining} day(s) left. ${formatPaceStatus(wk.currentPace, goalDelta7)}`;
+        `Averaged over ${wk.scored}/7 day(s) scored vs their drop-off weights. ${wk.remaining} day(s) left. ${formatPaceStatus(wk.currentPace, goalDelta7)}`;
     }
   }
 
