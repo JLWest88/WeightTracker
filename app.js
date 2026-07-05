@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
-const APP_VERSION = "2026-06-28.3";
+const APP_VERSION = "2026-06-28.4";
 
 // ---------- DOM ----------
 const appVersionEl = document.getElementById("appVersion");
@@ -321,25 +321,55 @@ function dailyWeightsMap(entries) {
   return byDate;
 }
 
-// Target weight for the SELECTED day F (anchored to F, never to "today").
+// Catch-up target weight for the Target day T within the plan week (F..F+6).
 // goal is signed: negative = cut, 0 = maintain, positive = gain.
-// To stay on weekly pace, your weight on day F should be the weight from
-// exactly 7 days earlier (the "drop-off" day) plus the weekly goal.
-function planTargetForDay(entries, fISO, goal) {
+//
+// Each day's "gap" = weight(day) - weight(day - 7) (the drop-off). The weekly
+// Δ7 goal IS the average of those gaps. So to make the counted days average to
+// the goal, the gap needed on T is:
+//     neededGap = goal * (countedBeforeT + 1) - sumOfGapsBeforeT
+// and the target weight = T's drop-off weight + neededGap.
+//
+// This is pure average-to-goal (symmetric): behind pace tightens the target,
+// ahead of pace loosens it. "onPace*" is the flat drop-off + goal for contrast.
+// Anchored to F + logged data, never to "today".
+function planCatchUpTarget(entries, fISO, tISO, goal) {
   const byDay = dailyWeightsMap(entries);
+  const days = planWeekDays(fISO);
 
-  const dropISO = dateToISO(addDays(isoToDate(fISO), -7));
-  const dropWeight = byDay.get(dropISO);
-  const hasDrop = typeof dropWeight === "number" && Number.isFinite(dropWeight);
+  let sumGap = 0;
+  let counted = 0;
+  for (const dISO of days) {
+    if (dISO >= tISO) continue; // only days already behind us in the week
+    const dropISO = dateToISO(addDays(isoToDate(dISO), -7));
+    const w = byDay.get(dISO);
+    const drop = byDay.get(dropISO);
+    if (
+      typeof w === "number" && Number.isFinite(w) &&
+      typeof drop === "number" && Number.isFinite(drop)
+    ) {
+      sumGap += (w - drop);
+      counted++;
+    }
+  }
 
-  const actual = byDay.get(fISO);
+  const dropTISO = dateToISO(addDays(isoToDate(tISO), -7));
+  const dropT = byDay.get(dropTISO);
+  const hasDropT = typeof dropT === "number" && Number.isFinite(dropT);
+
+  const neededGap = goal * (counted + 1) - sumGap; // catch-up gap for T
+  const actual = byDay.get(tISO);
   const hasActual = typeof actual === "number" && Number.isFinite(actual);
 
   return {
-    fISO,
-    dropISO,
-    dropWeight: hasDrop ? dropWeight : null,
-    targetWeight: hasDrop ? (dropWeight + goal) : null,
+    tISO,
+    dropISO: dropTISO,
+    dropWeight: hasDropT ? dropT : null,
+    counted,
+    currentPace: counted > 0 ? (sumGap / counted) : null,
+    neededGap,
+    targetWeight: hasDropT ? (dropT + neededGap) : null,
+    onPaceWeight: hasDropT ? (dropT + goal) : null,
     actualWeight: hasActual ? actual : null
   };
 }
@@ -541,8 +571,8 @@ function render() {
   // Direction word for the target ("or lower" for a cut, "or higher" for a gain).
   const dirWord = goalDelta7 < 0 ? "or lower" : (goalDelta7 > 0 ? "or higher" : "");
 
-  // --- Top card: target weight for the selected Target day (T) ---
-  const tgt = planTargetForDay(entries, tISO, goalDelta7);
+  // --- Top card: catch-up target weight for the selected Target day (T) ---
+  const tgt = planCatchUpTarget(entries, fISO, tISO, goalDelta7);
 
   if (reqNext7TitleEl) reqNext7TitleEl.textContent = `Target weight for ${formatISO(tISO)}`;
 
@@ -560,12 +590,27 @@ function render() {
       reqNext7HintEl.textContent =
         `Needs a logged weight on the drop-off date (${formatISO(tgt.dropISO)}) to compute the target for ${formatISO(tISO)}.`;
     } else {
-      let line =
-        `Drop-off ${formatISO(tgt.dropISO)} was ${round1(tgt.dropWeight).toFixed(1)}. ` +
-        `With a Δ7 goal of ${formatDelta(goalDelta7)}, the target for ${formatISO(tISO)} is ${round1(tgt.targetWeight).toFixed(1)}.`;
+      let line = `Drop-off ${formatISO(tgt.dropISO)} was ${round1(tgt.dropWeight).toFixed(1)}. `;
+
+      if (tgt.counted === 0) {
+        // No prior days this week — catch-up equals the plain on-pace target.
+        line += `With a Δ7 goal of ${formatDelta(goalDelta7)}, the target for ${formatISO(tISO)} is ${round1(tgt.targetWeight).toFixed(1)}.`;
+      } else {
+        line +=
+          `You've averaged ${formatDelta(tgt.currentPace)} lb/week over ${tgt.counted} day(s) (goal ${formatDelta(goalDelta7)}), ` +
+          `so to pull the week's average to goal, ${formatISO(tISO)} needs ${round1(tgt.targetWeight).toFixed(1)} ` +
+          `(${formatDelta(tgt.neededGap)} vs drop-off). On-pace alone: ${round1(tgt.onPaceWeight).toFixed(1)}.`;
+      }
+
       if (tgt.actualWeight != null) {
         line += ` Logged: ${round1(tgt.actualWeight).toFixed(1)} (${formatDelta(tgt.actualWeight - tgt.targetWeight)} vs target).`;
       }
+
+      // Honest catch-up, but flag when the deficit demands an extreme drop.
+      if (goalDelta7 !== 0 && Math.abs(tgt.neededGap) >= 2 * Math.abs(goalDelta7)) {
+        line += ` Large catch-up — consider moving "Plan starts" to reset the week.`;
+      }
+
       reqNext7HintEl.textContent = line;
     }
   }
