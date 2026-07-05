@@ -1,7 +1,7 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
-const APP_VERSION = "2026-06-28.4";
+const APP_VERSION = "2026-07-05.1";
 
 // ---------- DOM ----------
 const appVersionEl = document.getElementById("appVersion");
@@ -321,17 +321,18 @@ function dailyWeightsMap(entries) {
   return byDate;
 }
 
-// Catch-up target weight for the Target day T within the plan week (F..F+6).
+// Spread catch-up target for the Target day T within the plan week (F..F+6).
 // goal is signed: negative = cut, 0 = maintain, positive = gain.
 //
 // Each day's "gap" = weight(day) - weight(day - 7) (the drop-off). The weekly
-// Δ7 goal IS the average of those gaps. So to make the counted days average to
-// the goal, the gap needed on T is:
-//     neededGap = goal * (countedBeforeT + 1) - sumOfGapsBeforeT
+// Δ7 goal IS the average of those gaps, so the week needs 7*goal in total.
+// Whatever the days counted so far haven't covered is shared EVENLY across
+// every remaining day (T included) instead of dumped on T alone:
+//     neededGap = (7 * goal - sumOfGapsBeforeT) / (7 - countedBeforeT)
 // and the target weight = T's drop-off weight + neededGap.
 //
-// This is pure average-to-goal (symmetric): behind pace tightens the target,
-// ahead of pace loosens it. "onPace*" is the flat drop-off + goal for contrast.
+// Symmetric: behind pace tightens each remaining day a little, ahead of pace
+// loosens them. "onPace*" is the flat drop-off + goal for contrast.
 // Anchored to F + logged data, never to "today".
 function planCatchUpTarget(entries, fISO, tISO, goal) {
   const byDay = dailyWeightsMap(entries);
@@ -357,7 +358,8 @@ function planCatchUpTarget(entries, fISO, tISO, goal) {
   const dropT = byDay.get(dropTISO);
   const hasDropT = typeof dropT === "number" && Number.isFinite(dropT);
 
-  const neededGap = goal * (counted + 1) - sumGap; // catch-up gap for T
+  const remaining = 7 - counted; // days that can still move the week (T included)
+  const neededGap = (7 * goal - sumGap) / remaining; // per-day spread gap
   const actual = byDay.get(tISO);
   const hasActual = typeof actual === "number" && Number.isFinite(actual);
 
@@ -366,6 +368,7 @@ function planCatchUpTarget(entries, fISO, tISO, goal) {
     dropISO: dropTISO,
     dropWeight: hasDropT ? dropT : null,
     counted,
+    remaining,
     currentPace: counted > 0 ? (sumGap / counted) : null,
     neededGap,
     targetWeight: hasDropT ? (dropT + neededGap) : null,
@@ -593,22 +596,18 @@ function render() {
       let line = `Drop-off ${formatISO(tgt.dropISO)} was ${round1(tgt.dropWeight).toFixed(1)}. `;
 
       if (tgt.counted === 0) {
-        // No prior days this week — catch-up equals the plain on-pace target.
+        // No prior days this week — the spread equals the plain on-pace target.
         line += `With a Δ7 goal of ${formatDelta(goalDelta7)}, the target for ${formatISO(tISO)} is ${round1(tgt.targetWeight).toFixed(1)}.`;
       } else {
         line +=
-          `You've averaged ${formatDelta(tgt.currentPace)} lb/week over ${tgt.counted} day(s) (goal ${formatDelta(goalDelta7)}), ` +
-          `so to pull the week's average to goal, ${formatISO(tISO)} needs ${round1(tgt.targetWeight).toFixed(1)} ` +
-          `(${formatDelta(tgt.neededGap)} vs drop-off). On-pace alone: ${round1(tgt.onPaceWeight).toFixed(1)}.`;
+          `You've averaged ${formatDelta(tgt.currentPace)} lb/week over ${tgt.counted} day(s) (goal ${formatDelta(goalDelta7)}). ` +
+          `Spread across the ${tgt.remaining} remaining day(s), each needs ${formatDelta(tgt.neededGap)} vs its drop-off ` +
+          `to land the week on goal — for ${formatISO(tISO)} that's ${round1(tgt.targetWeight).toFixed(1)}. ` +
+          `On-pace alone: ${round1(tgt.onPaceWeight).toFixed(1)}.`;
       }
 
       if (tgt.actualWeight != null) {
         line += ` Logged: ${round1(tgt.actualWeight).toFixed(1)} (${formatDelta(tgt.actualWeight - tgt.targetWeight)} vs target).`;
-      }
-
-      // Honest catch-up, but flag when the deficit demands an extreme drop.
-      if (goalDelta7 !== 0 && Math.abs(tgt.neededGap) >= 2 * Math.abs(goalDelta7)) {
-        line += ` Large catch-up — consider moving "Plan starts" to reset the week.`;
       }
 
       reqNext7HintEl.textContent = line;
