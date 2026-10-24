@@ -70,7 +70,7 @@ h2{margin:0 0 10px;font-size:14px;color:#f3f4f6}
 }
 
 @media(min-width:760px){
-  .row{grid-template-columns: 140px 140px 1fr;}
+  .row{grid-template-columns: 140px 110px 110px 110px 1fr;}
 }
 
 label{

@@ -1,7 +1,11 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
-const APP_VERSION = "2026-07-05.1";
+const APP_VERSION = "2026-10-24.1";
+
+// Energy-balance constant: calories per pound of body weight change.
+// An approximation (true for fat; mixed tissue varies) — good enough here.
+const KCAL_PER_LB = 3500;
 
 // ---------- DOM ----------
 const appVersionEl = document.getElementById("appVersion");
@@ -10,6 +14,8 @@ if (appVersionEl) appVersionEl.textContent = APP_VERSION;
 // Quick Add
 const dateInput = document.getElementById("dateInput");
 const weightInput = document.getElementById("weightInput");
+const caloriesInput = document.getElementById("caloriesInput");
+const stepsInput = document.getElementById("stepsInput");
 const notesInput = document.getElementById("notesInput");
 const addBtn = document.getElementById("addBtn");
 const clearBtn = document.getElementById("clearBtn");
@@ -52,6 +58,14 @@ const planTodayEl = document.getElementById("planToday");
 
 const reqRemainingAvgEl = document.getElementById("reqRemainingAvg");
 const reqRemainingHintEl = document.getElementById("reqRemainingHint");
+
+// Energy (B-driven, like the dashboard)
+const tdee14El = document.getElementById("tdee14");
+const tdee14HintEl = document.getElementById("tdee14Hint");
+const tdee28El = document.getElementById("tdee28");
+const tdee28HintEl = document.getElementById("tdee28Hint");
+const balanceEl = document.getElementById("latestBalance");
+const balanceHintEl = document.getElementById("latestBalanceHint");
 
 // Helpers
 function el(id) { return document.getElementById(id); }
@@ -168,10 +182,17 @@ function loadEntries() {
     if (!raw) return [];
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
+    const num = (v) => (typeof v === "number" && Number.isFinite(v)) ? v : undefined;
     return arr
-      .filter(e => e && typeof e.date === "string" && typeof e.weight === "number")
+      // An entry needs a date plus at least one logged value (weight is no
+      // longer required — a day can be calories/steps only).
+      .filter(e => e && typeof e.date === "string" &&
+        (num(e.weight) != null || num(e.calories) != null || num(e.steps) != null))
       .map(e => ({
         ...e,
+        weight: num(e.weight),
+        calories: num(e.calories),
+        steps: num(e.steps),
         notes: typeof e.notes === "string" ? e.notes : ""
       }));
   } catch {
@@ -228,8 +249,9 @@ function getSortedEntries(entries) {
 }
 
 function getLatestEntryInfo(entries) {
-  if (!entries.length) return { latestDateISO: null, latestWeight: null };
-  const sorted = getSortedEntries(entries);
+  // Latest WEIGH-IN (entries can now be calories/steps only).
+  const sorted = getSortedEntries(entries).filter(e => typeof e.weight === "number");
+  if (!sorted.length) return { latestDateISO: null, latestWeight: null };
   const latestDateISO = sorted[sorted.length - 1].date;
   const latestWeight = [...sorted].reverse().find(e => e.date === latestDateISO)?.weight ?? null;
   return { latestDateISO, latestWeight };
@@ -269,6 +291,7 @@ function windowStats(sortedEntries, endDateObj, windowDays) {
   const start = addDays(endDateObj, -(windowDays - 1));
   const vals = [];
   for (const e of sortedEntries) {
+    if (typeof e.weight !== "number") continue; // calories/steps-only day
     const d = isoToDate(e.date);
     if (d >= start && d <= endDateObj) vals.push(e.weight);
   }
@@ -313,12 +336,20 @@ function computeDashboardMetrics(entries, endISO) {
   };
 }
 
-// Daily weights (latest per day wins)
-function dailyWeightsMap(entries) {
+// Daily value of one field (latest entry per day wins; missing fields skipped)
+function dailyNumberMap(entries, field) {
   const byDate = new Map();
   const sorted = getSortedEntries(entries);
-  for (const e of sorted) byDate.set(e.date, e.weight);
+  for (const e of sorted) {
+    const v = e[field];
+    if (typeof v === "number" && Number.isFinite(v)) byDate.set(e.date, v);
+  }
   return byDate;
+}
+
+// Daily weights (latest per day wins)
+function dailyWeightsMap(entries) {
+  return dailyNumberMap(entries, "weight");
 }
 
 // Spread catch-up target for the Target day T within the plan week (F..F+6).
@@ -443,6 +474,74 @@ function formatPaceStatus(pace, goal) {
   return "On target pace.";
 }
 
+// ---------- ENERGY ----------
+// Self-calibrating maintenance (TDEE) estimate over the N days ending at
+// endISO:  maintenance = avg calories eaten − (trend change × 3500 / N).
+// The trend change uses MA7 at the window's end vs MA7 just before its start,
+// so daily water noise stays out of it. Because the estimate calibrates to
+// YOUR logging, consistent under/over-logging cancels out — consistency
+// matters, accuracy doesn't.
+const ENERGY_MIN_CAL_COVERAGE = 0.8; // calories logged on >= 80% of the window
+const ENERGY_MIN_MA_DAYS = 3;        // weigh-ins needed in each MA7 endpoint
+
+function energyEstimate(entries, endISO, windowDays) {
+  const sorted = getSortedEntries(entries);
+  const calByDay = dailyNumberMap(entries, "calories");
+  const stepsByDay = dailyNumberMap(entries, "steps");
+  const end = isoToDate(endISO);
+
+  let calSum = 0, calDays = 0, stepSum = 0, stepDays = 0;
+  for (let i = 0; i < windowDays; i++) {
+    const dISO = dateToISO(addDays(end, -i));
+    const c = calByDay.get(dISO);
+    if (typeof c === "number") { calSum += c; calDays++; }
+    const s = stepsByDay.get(dISO);
+    if (typeof s === "number") { stepSum += s; stepDays++; }
+  }
+
+  const maEnd = windowStats(sorted, end, 7);
+  const maStart = windowStats(sorted, addDays(end, -windowDays), 7);
+
+  const avgIn = calDays > 0 ? (calSum / calDays) : null;
+  const avgSteps = stepDays > 0 ? (stepSum / stepDays) : null;
+
+  let maintenance = null;
+  let trendDelta = null;
+  if (
+    avgIn != null &&
+    (calDays / windowDays) >= ENERGY_MIN_CAL_COVERAGE &&
+    maEnd.avg != null && maEnd.count >= ENERGY_MIN_MA_DAYS &&
+    maStart.avg != null && maStart.count >= ENERGY_MIN_MA_DAYS
+  ) {
+    trendDelta = maEnd.avg - maStart.avg; // lb change across the window
+    maintenance = avgIn - (trendDelta * KCAL_PER_LB / windowDays);
+  }
+
+  return {
+    windowDays, avgIn, calDays, avgSteps, stepDays,
+    maEndCount: maEnd.count, maStartCount: maStart.count,
+    trendDelta, maintenance
+  };
+}
+
+// Most recent day (on or before endISO) with calories logged, scored against
+// the best available maintenance estimate (prefer the steadier 28-day one).
+function latestEnergyBalance(entries, endISO, est28, est14) {
+  const calByDay = dailyNumberMap(entries, "calories");
+  const days = [...calByDay.keys()].filter(d => d <= endISO).sort();
+  const dayISO = days.length ? days[days.length - 1] : null;
+
+  const est =
+    (est28.maintenance != null) ? { n: 28, v: est28.maintenance } :
+    (est14.maintenance != null) ? { n: 14, v: est14.maintenance } : null;
+
+  if (dayISO == null || est == null) return { dayISO, est, cal: null, balance: null, paceLbWk: null };
+
+  const cal = calByDay.get(dayISO);
+  const balance = cal - est.v;
+  return { dayISO, est, cal, balance, paceLbWk: balance * 7 / KCAL_PER_LB };
+}
+
 // ---------- EDIT MODE ----------
 function enterEditMode() {
   addBtn.textContent = "Update entry";
@@ -455,6 +554,8 @@ function exitEditMode() {
   if (cancelBtn) cancelBtn.style.display = "none";
 
   weightInput.value = "";
+  if (caloriesInput) caloriesInput.value = "";
+  if (stepsInput) stepsInput.value = "";
   notesInput.value = "";
   dateInput.value = todayISO();
 }
@@ -466,7 +567,9 @@ function startEdit(id) {
 
   editingId = id;
   dateInput.value = entry.date;
-  weightInput.value = String(entry.weight);
+  weightInput.value = (typeof entry.weight === "number") ? String(entry.weight) : "";
+  if (caloriesInput) caloriesInput.value = (typeof entry.calories === "number") ? String(entry.calories) : "";
+  if (stepsInput) stepsInput.value = (typeof entry.steps === "number") ? String(entry.steps) : "";
   notesInput.value = entry.notes || "";
 
   enterEditMode();
@@ -565,6 +668,51 @@ function render() {
     if (covPrevEl) covPrevEl.textContent = `${cPrev}/${s.n}`;
   }
 
+  // --- Energy section (B-driven, like the MA cards) ---
+  const est14 = energyEstimate(entries, bISO, 14);
+  const est28 = energyEstimate(entries, bISO, 28);
+
+  const renderEstimate = (est, vEl, hEl) => {
+    if (vEl) {
+      vEl.textContent = (est.maintenance == null)
+        ? "—"
+        : `${Math.round(est.maintenance).toLocaleString()} kcal/day`;
+    }
+    if (hEl) {
+      const N = est.windowDays;
+      const parts = [`${formatRange(bISO, N)}.`];
+      parts.push(`Calories ${est.calDays}/${N} logged${est.avgIn != null ? ` (avg ${Math.round(est.avgIn).toLocaleString()})` : ""}.`);
+      if (est.maintenance == null) {
+        parts.push(`Needs calories on ${Math.ceil(N * ENERGY_MIN_CAL_COVERAGE)}+ days and ${ENERGY_MIN_MA_DAYS}+ weigh-ins near both ends of the window.`);
+      } else {
+        parts.push(`Trend ${formatDelta(est.trendDelta)} lb over the window.`);
+      }
+      if (est.avgSteps != null) {
+        parts.push(`Steps avg ${Math.round(est.avgSteps).toLocaleString()} (${est.stepDays}/${N}).`);
+      }
+      hEl.textContent = parts.join(" ");
+    }
+  };
+  renderEstimate(est14, tdee14El, tdee14HintEl);
+  renderEstimate(est28, tdee28El, tdee28HintEl);
+
+  const bal = latestEnergyBalance(entries, bISO, est28, est14);
+  if (balanceEl) {
+    balanceEl.textContent = (bal.balance == null)
+      ? "—"
+      : `${bal.balance > 0 ? "+" : ""}${Math.round(bal.balance).toLocaleString()} kcal`;
+  }
+  if (balanceHintEl) {
+    if (bal.balance == null) {
+      balanceHintEl.textContent =
+        "Needs a day with calories logged and a valid maintenance estimate.";
+    } else {
+      balanceHintEl.textContent =
+        `${formatISO(bal.dayISO)}: ate ${Math.round(bal.cal).toLocaleString()} vs ${bal.est.n}-day maintenance ${Math.round(bal.est.v).toLocaleString()}. ` +
+        `≈ ${formatDelta(bal.paceLbWk)} lb/week if sustained.`;
+    }
+  }
+
   // Plan header: the plan week (F → F+6) and today, for reference.
   if (planWindowRangeEl) {
     planWindowRangeEl.textContent = `Plan week ${formatISO(fISO)} → ${formatISO(fEndISO)}`;
@@ -649,10 +797,14 @@ function render() {
       for (const e of display) {
         const row = document.createElement("div");
         row.className = "item";
+        const extras = [];
+        if (typeof e.calories === "number") extras.push(`${Math.round(e.calories).toLocaleString()} cal`);
+        if (typeof e.steps === "number") extras.push(`${Math.round(e.steps).toLocaleString()} steps`);
         row.innerHTML = `
           <div class="d">${formatISO(e.date)}</div>
           <div>
-            <div class="w">${round1(e.weight).toFixed(1)}</div>
+            <div class="w">${typeof e.weight === "number" ? round1(e.weight).toFixed(1) : "—"}</div>
+            ${extras.length ? `<div class="n">${extras.join(" • ")}</div>` : ""}
             <div class="n">${escapeHtml(e.notes || "")}</div>
           </div>
           <button data-edit-id="${e.id}" aria-label="Edit">Edit</button>
@@ -763,24 +915,43 @@ if (bSelect) {
 // Add / Update
 addBtn.addEventListener("click", () => {
   const date = dateInput.value || todayISO();
-  const w = Number(weightInput.value);
+
+  // Empty field = not logged (never a zero). "0" typed in calories/steps is a
+  // real value (e.g. a fasting day).
+  const parseOptional = (inputEl) => {
+    const raw = String(inputEl && inputEl.value != null ? inputEl.value : "").trim();
+    return raw === "" ? null : Number(raw);
+  };
+  const w = parseOptional(weightInput);
+  const cal = parseOptional(caloriesInput);
+  const st = parseOptional(stepsInput);
 
   if (!date) return alert("Pick a date.");
-  if (!Number.isFinite(w) || w <= 0) return alert("Enter a valid weight (> 0).");
+  if (w != null && (!Number.isFinite(w) || w <= 0)) return alert("Enter a valid weight (> 0), or leave it blank.");
+  if (cal != null && (!Number.isFinite(cal) || cal < 0)) return alert("Enter valid calories (0 or more), or leave it blank.");
+  if (st != null && (!Number.isFinite(st) || st < 0)) return alert("Enter valid steps (0 or more), or leave it blank.");
+  if (w == null && cal == null && st == null) return alert("Enter at least one of weight, calories, or steps.");
 
   const notes = (notesInput.value || "").trim();
   const entries = loadEntries();
 
+  // undefined fields are dropped by JSON.stringify, so a cleared field is removed.
+  const values = {
+    date,
+    weight: w == null ? undefined : w,
+    calories: cal == null ? undefined : cal,
+    steps: st == null ? undefined : st,
+    notes
+  };
+
   if (editingId) {
     const idx = entries.findIndex(e => e.id === editingId);
     if (idx !== -1) {
-      entries[idx] = { ...entries[idx], date, weight: w, notes };
+      entries[idx] = { ...entries[idx], ...values };
     } else {
       entries.push({
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2),
-        date,
-        weight: w,
-        notes,
+        ...values,
         createdAt: Date.now()
       });
     }
@@ -788,13 +959,13 @@ addBtn.addEventListener("click", () => {
   } else {
     entries.push({
       id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2),
-      date,
-      weight: w,
-      notes,
+      ...values,
       createdAt: Date.now()
     });
 
     weightInput.value = "";
+    if (caloriesInput) caloriesInput.value = "";
+    if (stepsInput) stepsInput.value = "";
     notesInput.value = "";
     dateInput.value = todayISO();
   }

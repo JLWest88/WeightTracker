@@ -38,10 +38,35 @@
             />
           </label>
           <label>
+            Calories
+            <input
+              id="caloriesInput"
+              type="number"
+              inputmode="numeric"
+              step="1"
+              min="0"
+              placeholder="e.g. 2100"
+            />
+          </label>
+          <label>
+            Steps
+            <input
+              id="stepsInput"
+              type="number"
+              inputmode="numeric"
+              step="1"
+              min="0"
+              placeholder="e.g. 8500"
+            />
+          </label>
+          <label>
             Notes (optional)
             <input id="notesInput" type="text" placeholder="e.g. salty dinner" />
           </label>
         </div>
+        <p class="tiny muted" style="margin:8px 0 0;">
+          Any field can be left blank — log whatever you have for the day (weight, calories, steps, or any mix).
+        </p>
         <div class="actions">
           <button id="addBtn" class="primary">Add entry</button>
           <button id="cancelBtn" class="ghost" style="display:none;">Cancel</button>
@@ -233,6 +258,28 @@
         </div>
       </section>
 
+      <!-- ENERGY (B-DRIVEN, like the MA cards) -->
+      <div class="sectionTitle">Energy</div>
+      <section class="grid" aria-label="Energy">
+        <div class="card metric">
+          <div class="label">Maintenance est. (14d)</div>
+          <div class="value" id="tdee14">—</div>
+          <div class="tiny muted" id="tdee14Hint" style="margin-top:6px;">—</div>
+        </div>
+
+        <div class="card metric">
+          <div class="label">Maintenance est. (28d)</div>
+          <div class="value" id="tdee28">—</div>
+          <div class="tiny muted" id="tdee28Hint" style="margin-top:6px;">—</div>
+        </div>
+
+        <div class="card metric">
+          <div class="label">Latest day's balance</div>
+          <div class="value" id="latestBalance">—</div>
+          <div class="tiny muted" id="latestBalanceHint" style="margin-top:6px;">—</div>
+        </div>
+      </section>
+
       <section class="card">
         <h2>Entries</h2>
         <div class="tiny muted" id="entryStats">—</div>
@@ -246,12 +293,14 @@
           <li><b>Prior</b>: the immediately preceding calendar window of the same length.</li>
           <li><b>Δ</b>: current average minus prior average (positive means upward trend).</li>
           <li>If you skip a day, it is simply not counted (no zeros inserted).</li>
+          <li><b>Maintenance est.</b>: average calories eaten over the window, minus the calories your weight change accounts for (trend change × 3500 ÷ window days). The trend uses MA7 at each end of the window, so daily water noise stays out. It calibrates to <i>your</i> logging, so consistency matters more than accuracy — but it needs calories on at least 80% of the window's days.</li>
+          <li><b>Latest day's balance</b>: that day's calories minus the maintenance estimate — your surplus (+) or deficit (−), with the weekly pace it implies.</li>
         </ul>
       </section>
     </main>
 
     <!-- Cache-bust version -->
-    <script src="app.js?v=20260705.1"></script>
+    <script src="app.js?v=20261024.1"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
