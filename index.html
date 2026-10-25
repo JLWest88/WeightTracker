@@ -322,12 +322,13 @@
           <li><b>Latest day's balance</b>: that day's calories minus the maintenance estimate — your surplus (+) or deficit (−), with the weekly pace it implies.</li>
           <li><b>Today's calorie budget</b>: maintenance, adjusted for today's steps vs your average, plus the Plan's catch-up pace converted to calories (pace × 3500 ÷ 7). Behind pace → the budget tightens; ahead → it loosens.</li>
           <li><b>Base burn + per-step (fit)</b>: finds the base-burn and kcal-per-step pair whose predicted weight curve (eaten − burned, day by day) best matches your actual trend. The average alone can't split base from steps — the day-to-day <i>variation</i> in your steps is what identifies it, so the fit declines (with a reason) until the data supports it. When valid, the budget uses the fitted per-step value; otherwise the manual fallback.</li>
+          <li><b>Untracked days</b>: a short gap (up to 3 days) with calories missing becomes an unknown the fit solves from how your weight actually responded afterwards — so skipped high days don't drag the estimates down. A gap is solved only after about a week of follow-up entries exists (shown as pending until then), and solved days feed the maintenance averages labeled "estimated". Solved values are rough; typing your own honest guess on the day always beats leaving it blank.</li>
         </ul>
       </section>
     </main>
 
     <!-- Cache-bust version -->
-    <script src="app.js?v=20261024.3"></script>
+    <script src="app.js?v=20261024.4"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));

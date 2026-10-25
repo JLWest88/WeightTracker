@@ -3,7 +3,7 @@ const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
 const STEP_KCAL_KEY = "wt_step_kcal_v1";
 const BUDGET_STEPS_KEY = "wt_budget_steps_v1";
-const APP_VERSION = "2026-10-24.3";
+const APP_VERSION = "2026-10-24.4";
 
 // Energy-balance constant: calories per pound of body weight change.
 // An approximation (true for fat; mixed tissue varies) — good enough here.
@@ -521,17 +521,21 @@ function formatPaceStatus(pace, goal) {
 const ENERGY_MIN_CAL_COVERAGE = 0.8; // calories logged on >= 80% of the window
 const ENERGY_MIN_MA_DAYS = 3;        // weigh-ins needed in each MA7 endpoint
 
-function energyEstimate(entries, endISO, windowDays) {
+// gapEst (optional): Map of ISO date → estimated kcal for untracked days the
+// fit has solved from the weight response. Those days count toward coverage,
+// reported separately as estDays so the hints can say "logged + estimated".
+function energyEstimate(entries, endISO, windowDays, gapEst) {
   const sorted = getSortedEntries(entries);
   const calByDay = dailyNumberMap(entries, "calories");
   const stepsByDay = dailyNumberMap(entries, "steps");
   const end = isoToDate(endISO);
 
-  let calSum = 0, calDays = 0, stepSum = 0, stepDays = 0;
+  let calSum = 0, calDays = 0, estDays = 0, stepSum = 0, stepDays = 0;
   for (let i = 0; i < windowDays; i++) {
     const dISO = dateToISO(addDays(end, -i));
     const c = calByDay.get(dISO);
     if (typeof c === "number") { calSum += c; calDays++; }
+    else if (gapEst && gapEst.has(dISO)) { calSum += gapEst.get(dISO); estDays++; }
     const s = stepsByDay.get(dISO);
     if (typeof s === "number") { stepSum += s; stepDays++; }
   }
@@ -539,14 +543,15 @@ function energyEstimate(entries, endISO, windowDays) {
   const maEnd = windowStats(sorted, end, 7);
   const maStart = windowStats(sorted, addDays(end, -windowDays), 7);
 
-  const avgIn = calDays > 0 ? (calSum / calDays) : null;
+  const covered = calDays + estDays;
+  const avgIn = covered > 0 ? (calSum / covered) : null;
   const avgSteps = stepDays > 0 ? (stepSum / stepDays) : null;
 
   let maintenance = null;
   let trendDelta = null;
   if (
     avgIn != null &&
-    (calDays / windowDays) >= ENERGY_MIN_CAL_COVERAGE &&
+    (covered / windowDays) >= ENERGY_MIN_CAL_COVERAGE &&
     maEnd.avg != null && maEnd.count >= ENERGY_MIN_MA_DAYS &&
     maStart.avg != null && maStart.count >= ENERGY_MIN_MA_DAYS
   ) {
@@ -555,18 +560,27 @@ function energyEstimate(entries, endISO, windowDays) {
   }
 
   return {
-    windowDays, avgIn, calDays, avgSteps, stepDays,
+    windowDays, avgIn, calDays, estDays, avgSteps, stepDays,
     maEndCount: maEnd.count, maStartCount: maStart.count,
     trendDelta, maintenance
   };
 }
 
 // ---------- ENERGY MODEL FIT ----------
-// Fits the two-parameter burn model  burn(day) = base + perStep × steps(day)
-// to the user's own history: pick the (base, perStep) pair whose predicted
-// weight curve — start at the trend, add each day's (eaten − burned) ÷ 3500 —
-// best matches the actual MA7 trend curve. Plain least squares, pooled across
-// contiguous runs of calorie-logged days.
+// Fits the burn model  burn(day) = base + perStep × steps(day)  to the user's
+// own history: choose the parameters whose predicted weight curve — start at
+// the trend, add each day's (eaten − burned) ÷ 3500 — best matches the actual
+// trend curve. Least squares, pooled across runs of calorie-logged days.
+//
+// UNTRACKED DAYS: a short gap (≤ GAP_MAX_DAYS) no longer breaks the ledger.
+// Each matured gap becomes one extra unknown — the gap's total untracked
+// intake — solved from how the weight actually responded afterwards. This
+// keeps base/perStep unbiased even though skipped days are usually HIGH days,
+// and the solved values feed the maintenance averages (labeled "estimated").
+// A gap is solved only once matured (enough follow-up entries exist); until
+// then it's reported as pending and stays a hard break. No assumption is made
+// about HOW FAST weight responds: the centered 7-day comparison tolerates
+// response lags of several days without being told the lag.
 //
 // The maintenance AVERAGE cannot separate base from steps (one equation, two
 // unknowns); the day-to-day VARIATION in steps is what identifies the split.
@@ -575,6 +589,37 @@ function energyEstimate(entries, endISO, windowDays) {
 const ENERGY_FIT_LOOKBACK = 56;      // days of history to fit over
 const ENERGY_FIT_MIN_POINTS = 21;    // usable days needed
 const ENERGY_FIT_MIN_STEP_SD = 1000; // daily-step spread needed to split the model
+const GAP_MAX_DAYS = 3;              // longest untracked stretch the fit will solve
+const GAP_MATURITY_DAYS = 7;         // follow-up days needed before a gap is solved
+const ENERGY_FIT_MAX_GAPS = 5;       // most gaps solvable in one window
+const ENERGY_FIT_MAX_LAG = 4;        // longest weight-response lag tried (days)
+
+// Solve A·x = b (small dense system) by Gaussian elimination with partial
+// pivoting. Mutates its arguments; returns null if singular.
+function solveLinearSystem(A, b) {
+  const M = b.length;
+  let maxAbs = 0;
+  for (const row of A) for (const v of row) maxAbs = Math.max(maxAbs, Math.abs(v));
+  if (!(maxAbs > 0)) return null;
+
+  for (let col = 0; col < M; col++) {
+    let piv = col;
+    for (let r = col + 1; r < M; r++) if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r;
+    if (Math.abs(A[piv][col]) < 1e-12 * maxAbs) return null;
+    if (piv !== col) {
+      const tr = A[col]; A[col] = A[piv]; A[piv] = tr;
+      const tb = b[col]; b[col] = b[piv]; b[piv] = tb;
+    }
+    for (let r = 0; r < M; r++) {
+      if (r === col) continue;
+      const f = A[r][col] / A[col][col];
+      if (f === 0) continue;
+      for (let c = col; c < M; c++) A[r][c] -= f * A[col][c];
+      b[r] -= f * b[col];
+    }
+  }
+  return b.map((v, i) => v / A[i][i]);
+}
 
 function fitEnergyModel(entries, endISO) {
   const sorted = getSortedEntries(entries);
@@ -582,103 +627,236 @@ function fitEnergyModel(entries, endISO) {
   const stepsByDay = dailyNumberMap(entries, "steps");
   const end = isoToDate(endISO);
 
-  // CENTERED 7-day average (window [d−3, d+3], i.e. trailing MA7 shifted +3).
-  // The trailing MA7 lags ~3 days behind the actual weight; against the
-  // model's same-day running totals that lag systematically blames the
-  // baseline for what steps did, badly attenuating the per-step estimate.
-  // Centering removes the lag (verified against model-generated data).
-  const trendAt = (dObj) => {
-    const s = windowStats(sorted, addDays(dObj, 3), 7);
+  // CENTERED 7-day average (window [d−3, d+3], i.e. trailing MA7 shifted +3),
+  // optionally shifted further by a response lag: the body may take days to
+  // show a day's balance on the scale, so the trend reflecting day d's totals
+  // is the centered average at d + lag. Booking against the wrong lag
+  // decorrelates the signals and attenuates the split (verified against
+  // model-generated data), so the fit tries several lags and keeps the best.
+  const trendAt = (dObj, lagDays) => {
+    const s = windowStats(sorted, addDays(dObj, 3 + lagDays), 7);
     return (s.avg != null && s.count >= ENERGY_MIN_MA_DAYS) ? s.avg : null;
   };
 
   // The lookback days, oldest → newest.
+  const wByDay = dailyNumberMap(entries, "weight");
   const days = [];
   for (let i = ENERGY_FIT_LOOKBACK - 1; i >= 0; i--) {
     const dObj = addDays(end, -i);
-    days.push({ dObj, cal: calByDay.get(dateToISO(dObj)), steps: stepsByDay.get(dateToISO(dObj)) });
+    const iso = dateToISO(dObj);
+    days.push({ dObj, iso, cal: calByDay.get(iso), steps: stepsByDay.get(iso), w: wByDay.get(iso) });
   }
 
   const loggedSteps = days.map(d => d.steps).filter(v => typeof v === "number");
-  if (!loggedSteps.length) return { valid: false, reason: "no steps logged in the last 56 days" };
+  if (!loggedSteps.length) return { valid: false, reason: "no steps logged in the last 56 days", pendingGaps: [] };
   const meanLoggedSteps = loggedSteps.reduce((a, b) => a + b, 0) / loggedSteps.length;
 
-  // Contiguous calorie-logged runs (a calorie gap breaks the energy ledger).
-  const runs = [];
-  let cur = [];
-  for (const d of days) {
-    if (typeof d.cal === "number") cur.push(d);
-    else { if (cur.length) runs.push(cur); cur = []; }
+  // Alternating blocks of calorie-logged days and gaps.
+  const hasCal = (d) => typeof d.cal === "number";
+  const blocks = [];
+  let t = 0;
+  while (t < days.length) {
+    const type = hasCal(days[t]) ? "cal" : "gap";
+    let e = t;
+    while (e + 1 < days.length && (hasCal(days[e + 1]) ? "cal" : "gap") === type) e++;
+    blocks.push({ type, start: t, end: e });
+    t = e + 1;
   }
-  if (cur.length) runs.push(cur);
 
-  // Pooled normal equations for y = base·x1 + perStep·x2 (no intercept).
+  // Merge cal blocks across bridgeable gaps. Each bridged gap becomes one
+  // unknown (its total untracked intake). A gap is bridged only when:
+  //   - it's short (≤ GAP_MAX_DAYS),
+  //   - ≥ 8 logged days precede it in the current run (anchoring needs them),
+  //   - it's matured: GAP_MATURITY_DAYS of follow-up exist with ≥ 5 calorie
+  //     days and ≥ 3 weigh-ins (the weight response that identifies it),
+  //   - the window isn't already solving ENERGY_FIT_MAX_GAPS gaps.
+  // Otherwise the gap stays a hard break (reported as pending when it's the
+  // solvable kind and just needs more follow-up).
+  const runs = [];           // { items: [{day, gapIdx}], gapIdxs: [...] }
+  const bridgedGaps = [];    // { dayISOs, len, startISO, endISO }
+  const pendingGaps = [];    // { startISO, endISO, len, reason }
+  let merged = null;
+  const closeRun = () => { if (merged && merged.items.length) runs.push(merged); merged = null; };
+
+  for (let b = 0; b < blocks.length; b++) {
+    const blk = blocks[b];
+    if (blk.type === "cal") {
+      if (!merged) merged = { items: [], gapIdxs: [] };
+      for (let q = blk.start; q <= blk.end; q++) merged.items.push({ day: days[q], gapIdx: -1 });
+      continue;
+    }
+
+    // gap block
+    const len = blk.end - blk.start + 1;
+    if (!merged) continue; // leading gap — nothing to bridge from
+    const gapInfo = { startISO: days[blk.start].iso, endISO: days[blk.end].iso, len };
+
+    const followOk = (b + 1 < blocks.length && blocks[b + 1].type === "cal");
+    const matureEnd = blk.end + GAP_MATURITY_DAYS;
+    let followCal = 0, followW = 0;
+    if (matureEnd < days.length) {
+      for (let q = blk.end + 1; q <= matureEnd; q++) {
+        if (hasCal(days[q])) followCal++;
+        if (typeof days[q].w === "number") followW++;
+      }
+    }
+    const matured = matureEnd < days.length && followCal >= 5 && followW >= 3;
+
+    if (len <= GAP_MAX_DAYS && followOk && merged.items.length >= 8 &&
+        matured && bridgedGaps.length < ENERGY_FIT_MAX_GAPS) {
+      const gapIdx = bridgedGaps.length;
+      const dayISOs = [];
+      for (let q = blk.start; q <= blk.end; q++) {
+        dayISOs.push(days[q].iso);
+        merged.items.push({ day: days[q], gapIdx });
+      }
+      bridgedGaps.push({ ...gapInfo, dayISOs });
+      merged.gapIdxs.push(gapIdx);
+    } else {
+      if (len <= GAP_MAX_DAYS) {
+        pendingGaps.push({ ...gapInfo, reason: !matured || !followOk ? "needs more entries after it" : "window already at its gap limit" });
+      }
+      closeRun();
+    }
+  }
+  closeRun();
+
+  // Pooled least squares for y = base·x1 + perStep·x2 − Σ gapIntake·xG.
   // The actual trend is a centered 7-day AVERAGE of weights, so the model's
-  // running totals (days, calories, steps since the anchor) must get the SAME
-  // centered 7-day smoothing before differencing — otherwise sharp step
-  // changes are compared against a smoothed curve and the per-step estimate
-  // attenuates (confirmed against model-generated data).
-  let S11 = 0, S12 = 0, S22 = 0, Sy1 = 0, Sy2 = 0, points = 0;
-  const usedSteps = [];
+  // running totals (days, calories, steps, gap indicators since the anchor)
+  // get the SAME centered 7-day smoothing before differencing — otherwise
+  // sharp changes compared against a smoothed curve attenuate the estimates
+  // (confirmed against model-generated data).
+  //
+  // The whole system is evaluated at candidate response lags 0..MAX_LAG and
+  // the lag with the lowest mean squared error wins — the lag is read off the
+  // data, never assumed.
 
+  // Per-run cumulative series (lag-independent), built once.
+  const prepared = [];
+  const usedSteps = [];
   for (const run of runs) {
-    const L = run.length;
+    const L = run.items.length;
     if (L < 8) continue; // too short to anchor + smooth + leave a residual
 
     const cumN = new Array(L), cumC = new Array(L), cumS = new Array(L);
+    const cumI = run.gapIdxs.map(() => new Array(L));
     let cN = 0, cC = 0, cS = 0;
+    const cI = run.gapIdxs.map(() => 0);
     for (let q = 0; q < L; q++) {
+      const it = run.items[q];
       cN += 1;
-      cC += run[q].cal;
-      const st = (typeof run[q].steps === "number") ? run[q].steps : meanLoggedSteps;
+      cC += (it.gapIdx === -1) ? it.day.cal : 0;
+      const st = (typeof it.day.steps === "number") ? it.day.steps : meanLoggedSteps;
       cS += st;
       usedSteps.push(st);
+      if (it.gapIdx !== -1) {
+        const gi = run.gapIdxs.indexOf(it.gapIdx);
+        cI[gi] += 1 / bridgedGaps[it.gapIdx].len; // intake spread evenly over the gap
+      }
       cumN[q] = cN; cumC[q] = cC; cumS[q] = cS;
+      for (let g = 0; g < cI.length; g++) cumI[g][q] = cI[g];
     }
-
-    const sm = (arr, q) => { let s = 0; for (let j = -3; j <= 3; j++) s += arr[q + j]; return s / 7; };
-
-    const a = 3; // anchor index: first day whose ±3 smoothing window fits in the run
-    if (L - 4 <= a) continue;
-    const Ta = trendAt(run[a].dObj);
-    if (Ta == null) continue;
-    const nA = sm(cumN, a), cA = sm(cumC, a), sA = sm(cumS, a);
-
-    for (let p = a + 1; p <= L - 4; p++) {
-      const Tp = trendAt(run[p].dObj);
-      if (Tp == null) continue;
-      const x1 = sm(cumN, p) - nA;
-      const x2 = sm(cumS, p) - sA;
-      const y = (sm(cumC, p) - cA) + KCAL_PER_LB * (Ta - Tp);
-      S11 += x1 * x1; S12 += x1 * x2; S22 += x2 * x2;
-      Sy1 += x1 * y; Sy2 += x2 * y;
-      points++;
-    }
+    prepared.push({ run, L, cumN, cumC, cumS, cumI });
   }
 
-  if (points < ENERGY_FIT_MIN_POINTS) {
-    return { valid: false, reason: `only ${points} usable day(s) so far — needs ${ENERGY_FIT_MIN_POINTS}+`, points };
+  if (!usedSteps.length) {
+    return { valid: false, reason: "not enough connected calorie-logged days yet", points: 0, pendingGaps };
   }
-
   const mSt = usedSteps.reduce((a, b) => a + b, 0) / usedSteps.length;
   const stepSd = Math.sqrt(usedSteps.reduce((a, b) => a + (b - mSt) * (b - mSt), 0) / usedSteps.length);
   if (stepSd < ENERGY_FIT_MIN_STEP_SD) {
-    return { valid: false, reason: `daily steps vary too little (spread ≈ ${Math.round(stepSd)}; needs ${ENERGY_FIT_MIN_STEP_SD}+) to separate base burn from steps`, points, stepSd };
+    return { valid: false, reason: `daily steps vary too little (spread ≈ ${Math.round(stepSd)}; needs ${ENERGY_FIT_MIN_STEP_SD}+) to separate base burn from steps`, points: 0, stepSd, pendingGaps };
   }
 
-  const det = S11 * S22 - S12 * S12;
-  if (!(det > 1e-9 * S11 * S22)) {
-    return { valid: false, reason: "step pattern too uniform to separate base burn from steps", points, stepSd };
+  const sm = (arr, q) => { let s = 0; for (let j = -3; j <= 3; j++) s += arr[q + j]; return s / 7; };
+  const M = 2 + bridgedGaps.length;
+
+  let best = null;
+  let anyPoints = 0;
+  for (let lag = 0; lag <= ENERGY_FIT_MAX_LAG; lag++) {
+    const rows = [];
+    for (const pr of prepared) {
+      const { run, L, cumN, cumC, cumS, cumI } = pr;
+      const a = 3; // anchor index: bridged gaps start at index ≥ 8, so this is clean
+      // Keep the data-side trend windows inside the run: beyond its end the
+      // weights may reflect an unbridged gap's unknown intake.
+      const pMax = L - 4 - lag;
+      if (pMax <= a) continue;
+      const Ta = trendAt(run.items[a].day.dObj, lag);
+      if (Ta == null) continue;
+      const nA = sm(cumN, a), cA = sm(cumC, a), sA = sm(cumS, a);
+      const iA = cumI.map(arr => sm(arr, a));
+
+      for (let p = a + 1; p <= pMax; p++) {
+        const Tp = trendAt(run.items[p].day.dObj, lag);
+        if (Tp == null) continue;
+        const row = new Array(M).fill(0);
+        row[0] = sm(cumN, p) - nA;
+        row[1] = sm(cumS, p) - sA;
+        for (let g = 0; g < run.gapIdxs.length; g++) {
+          row[2 + run.gapIdxs[g]] = -(sm(cumI[g], p) - iA[g]);
+        }
+        rows.push({ row, y: (sm(cumC, p) - cA) + KCAL_PER_LB * (Ta - Tp) });
+      }
+    }
+    anyPoints = Math.max(anyPoints, rows.length);
+    if (rows.length < ENERGY_FIT_MIN_POINTS) continue;
+
+    const XtX = Array.from({ length: M }, () => new Array(M).fill(0));
+    const Xty = new Array(M).fill(0);
+    for (const { row, y } of rows) {
+      for (let r = 0; r < M; r++) {
+        if (row[r] === 0) continue;
+        for (let c = r; c < M; c++) XtX[r][c] += row[r] * row[c];
+        Xty[r] += row[r] * y;
+      }
+    }
+    for (let r = 0; r < M; r++) for (let c = 0; c < r; c++) XtX[r][c] = XtX[c][r];
+
+    const sol = solveLinearSystem(XtX, Xty);
+    if (!sol) continue;
+
+    let sse = 0;
+    for (const { row, y } of rows) {
+      let pred = 0;
+      for (let c = 0; c < M; c++) pred += row[c] * sol[c];
+      sse += (y - pred) * (y - pred);
+    }
+    const mse = sse / rows.length;
+    const plausible = sol[1] >= 0.01 && sol[1] <= 0.1 && sol[0] >= 500 && sol[0] <= 5000;
+
+    if (!best ||
+        (plausible && !best.plausible) ||
+        (plausible === best.plausible && mse < best.mse)) {
+      best = { lag, sol, mse, points: rows.length, plausible };
+    }
   }
 
-  const base = (Sy1 * S22 - Sy2 * S12) / det;
-  const perStep = (Sy2 * S11 - Sy1 * S12) / det;
-
-  if (!(perStep >= 0.01 && perStep <= 0.1) || !(base >= 500 && base <= 5000)) {
-    return { valid: false, reason: `fit result implausible (base ${Math.round(base)}, ${perStep.toFixed(3)}/step) — needs more or cleaner data`, points, stepSd, base, perStep };
+  if (!best) {
+    return { valid: false, reason: `only ${anyPoints} usable day(s) so far — needs ${ENERGY_FIT_MIN_POINTS}+`, points: anyPoints, stepSd, pendingGaps };
+  }
+  if (!best.plausible) {
+    return { valid: false, reason: `fit result implausible (base ${Math.round(best.sol[0])}, ${best.sol[1].toFixed(3)}/step) — needs more or cleaner data`, points: best.points, stepSd, base: best.sol[0], perStep: best.sol[1], pendingGaps };
   }
 
-  return { valid: true, base, perStep, points, stepSd, avgSteps: mSt };
+  const solvedGaps = bridgedGaps.map((g, gi) => ({
+    ...g,
+    estTotal: best.sol[2 + gi],
+    estPerDay: best.sol[2 + gi] / g.len
+  }));
+
+  return {
+    valid: true,
+    base: best.sol[0],
+    perStep: best.sol[1],
+    lag: best.lag,
+    points: best.points,
+    stepSd,
+    avgSteps: mSt,
+    solvedGaps,
+    pendingGaps
+  };
 }
 
 // Most recent day (on or before endISO) with calories logged, scored against
@@ -826,8 +1004,17 @@ function render() {
   }
 
   // --- Energy section (B-driven, like the MA cards) ---
-  const est14 = energyEstimate(entries, bISO, 14);
-  const est28 = energyEstimate(entries, bISO, 28);
+  // Fit first: its solved untracked-day intakes feed the maintenance averages.
+  const fit = fitEnergyModel(entries, todayISO());
+  const gapEst = new Map();
+  if (fit.valid && fit.solvedGaps) {
+    for (const gSolved of fit.solvedGaps) {
+      for (const iso of gSolved.dayISOs) gapEst.set(iso, Math.max(0, gSolved.estPerDay));
+    }
+  }
+
+  const est14 = energyEstimate(entries, bISO, 14, gapEst);
+  const est28 = energyEstimate(entries, bISO, 28, gapEst);
 
   const renderEstimate = (est, vEl, hEl) => {
     if (vEl) {
@@ -838,7 +1025,7 @@ function render() {
     if (hEl) {
       const N = est.windowDays;
       const parts = [`${formatRange(bISO, N)}.`];
-      parts.push(`Calories ${est.calDays}/${N} logged${est.avgIn != null ? ` (avg ${Math.round(est.avgIn).toLocaleString()})` : ""}.`);
+      parts.push(`Calories ${est.calDays}/${N} logged${est.estDays ? ` + ${est.estDays} estimated` : ""}${est.avgIn != null ? ` (avg ${Math.round(est.avgIn).toLocaleString()})` : ""}.`);
       if (est.maintenance == null) {
         parts.push(`Needs calories on ${Math.ceil(N * ENERGY_MIN_CAL_COVERAGE)}+ days and ${ENERGY_MIN_MA_DAYS}+ weigh-ins near both ends of the window.`);
       } else {
@@ -870,24 +1057,38 @@ function render() {
     }
   }
 
-  // Fitted burn model (base + per-step), anchored at real today like the
-  // budget it feeds. Also reused by the budget card below.
-  const fit = fitEnergyModel(entries, todayISO());
+  // Fitted burn model card (fit itself computed at the top of this block).
   if (energyFitEl) {
     energyFitEl.textContent = fit.valid
       ? `${Math.round(fit.base).toLocaleString()} + ${fit.perStep.toFixed(3)}/step`
       : "—";
   }
   if (energyFitHintEl) {
+    const gapNotes = [];
+    if (fit.solvedGaps && fit.solvedGaps.length) {
+      gapNotes.push("Untracked day(s) solved from your weight response: " +
+        fit.solvedGaps.map(gSolved =>
+          `${formatISO(gSolved.startISO)}${gSolved.len > 1 ? `–${formatISO(gSolved.endISO)}` : ""} ≈ ${Math.round(Math.max(0, gSolved.estPerDay)).toLocaleString()}/day`
+        ).join("; ") + " (rough values — their job is keeping the averages unbiased).");
+    }
+    if (fit.pendingGaps && fit.pendingGaps.length) {
+      gapNotes.push("Pending: " +
+        fit.pendingGaps.map(gPend =>
+          `${formatISO(gPend.startISO)}${gPend.len > 1 ? `–${formatISO(gPend.endISO)}` : ""} (${gPend.reason})`
+        ).join("; ") + ".");
+    }
+
     if (fit.valid) {
       const atAvg = fit.base + fit.perStep * fit.avgSteps;
       energyFitHintEl.textContent =
-        `Fitted from your last ${ENERGY_FIT_LOOKBACK} days (${fit.points} usable; daily-step spread ≈ ${Math.round(fit.stepSd).toLocaleString()}). ` +
+        `Fitted from your last ${ENERGY_FIT_LOOKBACK} days (${fit.points} usable; daily-step spread ≈ ${Math.round(fit.stepSd).toLocaleString()}; scale response lag ≈ ${fit.lag} day(s), auto-detected). ` +
         `Base burn ≈ ${Math.round(fit.base).toLocaleString()} kcal/day plus ${fit.perStep.toFixed(3)} kcal per step ` +
-        `— at your average ${Math.round(fit.avgSteps).toLocaleString()} steps that's ${Math.round(atAvg).toLocaleString()} total (cross-check against maintenance).`;
+        `— at your average ${Math.round(fit.avgSteps).toLocaleString()} steps that's ${Math.round(atAvg).toLocaleString()} total (cross-check against maintenance).` +
+        (gapNotes.length ? " " + gapNotes.join(" ") : "");
     } else {
       energyFitHintEl.textContent =
-        `No fit yet: ${fit.reason}. The calorie budget uses the manual kcal/step setting until the fit is possible.`;
+        `No fit yet: ${fit.reason}. The calorie budget uses the manual kcal/step setting until the fit is possible.` +
+        (gapNotes.length ? " " + gapNotes.join(" ") : "");
     }
   }
 
@@ -965,8 +1166,8 @@ function render() {
   // Burn for THIS day (maintenance, adjusted for today's steps vs the window
   // average) plus the plan's spread catch-up pace converted to calories.
   // Anchored to real today — eating is inherently a today decision.
-  const estT28 = energyEstimate(entries, todayISO(), 28);
-  const estT14 = energyEstimate(entries, todayISO(), 14);
+  const estT28 = energyEstimate(entries, todayISO(), 28, gapEst);
+  const estT14 = energyEstimate(entries, todayISO(), 14, gapEst);
   const estT =
     (estT28.maintenance != null) ? { n: 28, m: estT28.maintenance, avgSteps: estT28.avgSteps } :
     (estT14.maintenance != null) ? { n: 14, m: estT14.maintenance, avgSteps: estT14.avgSteps } : null;
