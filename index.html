@@ -162,8 +162,8 @@
               Steps today
               <input id="stepsTodayInput" type="number" inputmode="numeric" step="1" min="0" placeholder="avg" />
             </label>
-            <label style="width:110px;">
-              kcal / step
+            <label style="width:130px;">
+              kcal / step (fallback)
               <input id="stepKcalInput" type="text" inputmode="decimal" placeholder="0.04" />
             </label>
           </div>
@@ -297,6 +297,12 @@
           <div class="value" id="latestBalance">—</div>
           <div class="tiny muted" id="latestBalanceHint" style="margin-top:6px;">—</div>
         </div>
+
+        <div class="card metric">
+          <div class="label">Base burn + per-step (fit)</div>
+          <div class="value" id="energyFit">—</div>
+          <div class="tiny muted" id="energyFitHint" style="margin-top:6px;">—</div>
+        </div>
       </section>
 
       <section class="card">
@@ -314,13 +320,14 @@
           <li>If you skip a day, it is simply not counted (no zeros inserted).</li>
           <li><b>Maintenance est.</b>: average calories eaten over the window, minus the calories your weight change accounts for (trend change × 3500 ÷ window days). The trend uses MA7 at each end of the window, so daily water noise stays out. It calibrates to <i>your</i> logging, so consistency matters more than accuracy — but it needs calories on at least 80% of the window's days.</li>
           <li><b>Latest day's balance</b>: that day's calories minus the maintenance estimate — your surplus (+) or deficit (−), with the weekly pace it implies.</li>
-          <li><b>Today's calorie budget</b>: maintenance, adjusted for today's steps vs your average (± kcal/step setting), plus the Plan's catch-up pace converted to calories (pace × 3500 ÷ 7). Behind pace → the budget tightens; ahead → it loosens.</li>
+          <li><b>Today's calorie budget</b>: maintenance, adjusted for today's steps vs your average, plus the Plan's catch-up pace converted to calories (pace × 3500 ÷ 7). Behind pace → the budget tightens; ahead → it loosens.</li>
+          <li><b>Base burn + per-step (fit)</b>: finds the base-burn and kcal-per-step pair whose predicted weight curve (eaten − burned, day by day) best matches your actual trend. The average alone can't split base from steps — the day-to-day <i>variation</i> in your steps is what identifies it, so the fit declines (with a reason) until the data supports it. When valid, the budget uses the fitted per-step value; otherwise the manual fallback.</li>
         </ul>
       </section>
     </main>
 
     <!-- Cache-bust version -->
-    <script src="app.js?v=20261024.2"></script>
+    <script src="app.js?v=20261024.3"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));

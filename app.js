@@ -3,7 +3,7 @@ const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
 const STEP_KCAL_KEY = "wt_step_kcal_v1";
 const BUDGET_STEPS_KEY = "wt_budget_steps_v1";
-const APP_VERSION = "2026-10-24.2";
+const APP_VERSION = "2026-10-24.3";
 
 // Energy-balance constant: calories per pound of body weight change.
 // An approximation (true for fat; mixed tissue varies) — good enough here.
@@ -74,6 +74,8 @@ const tdee28El = document.getElementById("tdee28");
 const tdee28HintEl = document.getElementById("tdee28Hint");
 const balanceEl = document.getElementById("latestBalance");
 const balanceHintEl = document.getElementById("latestBalanceHint");
+const energyFitEl = document.getElementById("energyFit");
+const energyFitHintEl = document.getElementById("energyFitHint");
 
 // Helpers
 function el(id) { return document.getElementById(id); }
@@ -559,6 +561,126 @@ function energyEstimate(entries, endISO, windowDays) {
   };
 }
 
+// ---------- ENERGY MODEL FIT ----------
+// Fits the two-parameter burn model  burn(day) = base + perStep × steps(day)
+// to the user's own history: pick the (base, perStep) pair whose predicted
+// weight curve — start at the trend, add each day's (eaten − burned) ÷ 3500 —
+// best matches the actual MA7 trend curve. Plain least squares, pooled across
+// contiguous runs of calorie-logged days.
+//
+// The maintenance AVERAGE cannot separate base from steps (one equation, two
+// unknowns); the day-to-day VARIATION in steps is what identifies the split.
+// So the fit declines, with a reason, when the data can't support it — and the
+// budget then falls back to the manual kcal/step setting.
+const ENERGY_FIT_LOOKBACK = 56;      // days of history to fit over
+const ENERGY_FIT_MIN_POINTS = 21;    // usable days needed
+const ENERGY_FIT_MIN_STEP_SD = 1000; // daily-step spread needed to split the model
+
+function fitEnergyModel(entries, endISO) {
+  const sorted = getSortedEntries(entries);
+  const calByDay = dailyNumberMap(entries, "calories");
+  const stepsByDay = dailyNumberMap(entries, "steps");
+  const end = isoToDate(endISO);
+
+  // CENTERED 7-day average (window [d−3, d+3], i.e. trailing MA7 shifted +3).
+  // The trailing MA7 lags ~3 days behind the actual weight; against the
+  // model's same-day running totals that lag systematically blames the
+  // baseline for what steps did, badly attenuating the per-step estimate.
+  // Centering removes the lag (verified against model-generated data).
+  const trendAt = (dObj) => {
+    const s = windowStats(sorted, addDays(dObj, 3), 7);
+    return (s.avg != null && s.count >= ENERGY_MIN_MA_DAYS) ? s.avg : null;
+  };
+
+  // The lookback days, oldest → newest.
+  const days = [];
+  for (let i = ENERGY_FIT_LOOKBACK - 1; i >= 0; i--) {
+    const dObj = addDays(end, -i);
+    days.push({ dObj, cal: calByDay.get(dateToISO(dObj)), steps: stepsByDay.get(dateToISO(dObj)) });
+  }
+
+  const loggedSteps = days.map(d => d.steps).filter(v => typeof v === "number");
+  if (!loggedSteps.length) return { valid: false, reason: "no steps logged in the last 56 days" };
+  const meanLoggedSteps = loggedSteps.reduce((a, b) => a + b, 0) / loggedSteps.length;
+
+  // Contiguous calorie-logged runs (a calorie gap breaks the energy ledger).
+  const runs = [];
+  let cur = [];
+  for (const d of days) {
+    if (typeof d.cal === "number") cur.push(d);
+    else { if (cur.length) runs.push(cur); cur = []; }
+  }
+  if (cur.length) runs.push(cur);
+
+  // Pooled normal equations for y = base·x1 + perStep·x2 (no intercept).
+  // The actual trend is a centered 7-day AVERAGE of weights, so the model's
+  // running totals (days, calories, steps since the anchor) must get the SAME
+  // centered 7-day smoothing before differencing — otherwise sharp step
+  // changes are compared against a smoothed curve and the per-step estimate
+  // attenuates (confirmed against model-generated data).
+  let S11 = 0, S12 = 0, S22 = 0, Sy1 = 0, Sy2 = 0, points = 0;
+  const usedSteps = [];
+
+  for (const run of runs) {
+    const L = run.length;
+    if (L < 8) continue; // too short to anchor + smooth + leave a residual
+
+    const cumN = new Array(L), cumC = new Array(L), cumS = new Array(L);
+    let cN = 0, cC = 0, cS = 0;
+    for (let q = 0; q < L; q++) {
+      cN += 1;
+      cC += run[q].cal;
+      const st = (typeof run[q].steps === "number") ? run[q].steps : meanLoggedSteps;
+      cS += st;
+      usedSteps.push(st);
+      cumN[q] = cN; cumC[q] = cC; cumS[q] = cS;
+    }
+
+    const sm = (arr, q) => { let s = 0; for (let j = -3; j <= 3; j++) s += arr[q + j]; return s / 7; };
+
+    const a = 3; // anchor index: first day whose ±3 smoothing window fits in the run
+    if (L - 4 <= a) continue;
+    const Ta = trendAt(run[a].dObj);
+    if (Ta == null) continue;
+    const nA = sm(cumN, a), cA = sm(cumC, a), sA = sm(cumS, a);
+
+    for (let p = a + 1; p <= L - 4; p++) {
+      const Tp = trendAt(run[p].dObj);
+      if (Tp == null) continue;
+      const x1 = sm(cumN, p) - nA;
+      const x2 = sm(cumS, p) - sA;
+      const y = (sm(cumC, p) - cA) + KCAL_PER_LB * (Ta - Tp);
+      S11 += x1 * x1; S12 += x1 * x2; S22 += x2 * x2;
+      Sy1 += x1 * y; Sy2 += x2 * y;
+      points++;
+    }
+  }
+
+  if (points < ENERGY_FIT_MIN_POINTS) {
+    return { valid: false, reason: `only ${points} usable day(s) so far — needs ${ENERGY_FIT_MIN_POINTS}+`, points };
+  }
+
+  const mSt = usedSteps.reduce((a, b) => a + b, 0) / usedSteps.length;
+  const stepSd = Math.sqrt(usedSteps.reduce((a, b) => a + (b - mSt) * (b - mSt), 0) / usedSteps.length);
+  if (stepSd < ENERGY_FIT_MIN_STEP_SD) {
+    return { valid: false, reason: `daily steps vary too little (spread ≈ ${Math.round(stepSd)}; needs ${ENERGY_FIT_MIN_STEP_SD}+) to separate base burn from steps`, points, stepSd };
+  }
+
+  const det = S11 * S22 - S12 * S12;
+  if (!(det > 1e-9 * S11 * S22)) {
+    return { valid: false, reason: "step pattern too uniform to separate base burn from steps", points, stepSd };
+  }
+
+  const base = (Sy1 * S22 - Sy2 * S12) / det;
+  const perStep = (Sy2 * S11 - Sy1 * S12) / det;
+
+  if (!(perStep >= 0.01 && perStep <= 0.1) || !(base >= 500 && base <= 5000)) {
+    return { valid: false, reason: `fit result implausible (base ${Math.round(base)}, ${perStep.toFixed(3)}/step) — needs more or cleaner data`, points, stepSd, base, perStep };
+  }
+
+  return { valid: true, base, perStep, points, stepSd, avgSteps: mSt };
+}
+
 // Most recent day (on or before endISO) with calories logged, scored against
 // the best available maintenance estimate (prefer the steadier 28-day one).
 function latestEnergyBalance(entries, endISO, est28, est14) {
@@ -748,6 +870,27 @@ function render() {
     }
   }
 
+  // Fitted burn model (base + per-step), anchored at real today like the
+  // budget it feeds. Also reused by the budget card below.
+  const fit = fitEnergyModel(entries, todayISO());
+  if (energyFitEl) {
+    energyFitEl.textContent = fit.valid
+      ? `${Math.round(fit.base).toLocaleString()} + ${fit.perStep.toFixed(3)}/step`
+      : "—";
+  }
+  if (energyFitHintEl) {
+    if (fit.valid) {
+      const atAvg = fit.base + fit.perStep * fit.avgSteps;
+      energyFitHintEl.textContent =
+        `Fitted from your last ${ENERGY_FIT_LOOKBACK} days (${fit.points} usable; daily-step spread ≈ ${Math.round(fit.stepSd).toLocaleString()}). ` +
+        `Base burn ≈ ${Math.round(fit.base).toLocaleString()} kcal/day plus ${fit.perStep.toFixed(3)} kcal per step ` +
+        `— at your average ${Math.round(fit.avgSteps).toLocaleString()} steps that's ${Math.round(atAvg).toLocaleString()} total (cross-check against maintenance).`;
+    } else {
+      energyFitHintEl.textContent =
+        `No fit yet: ${fit.reason}. The calorie budget uses the manual kcal/step setting until the fit is possible.`;
+    }
+  }
+
   // Plan header: the plan week (F → F+6) and today, for reference.
   if (planWindowRangeEl) {
     planWindowRangeEl.textContent = `Plan week ${formatISO(fISO)} → ${formatISO(fEndISO)}`;
@@ -828,6 +971,11 @@ function render() {
     (estT28.maintenance != null) ? { n: 28, m: estT28.maintenance, avgSteps: estT28.avgSteps } :
     (estT14.maintenance != null) ? { n: 14, m: estT14.maintenance, avgSteps: estT14.avgSteps } : null;
 
+  // Per-step cost: fitted from the user's own data when the fit is valid;
+  // the manual setting is only the fallback. (fit computed in the Energy block)
+  const kPerStep = fit.valid ? fit.perStep : stepKcal;
+  const kSource = fit.valid ? `${fit.perStep.toFixed(3)} kcal/step fitted from your data` : `manual ${stepKcal} kcal/step (no fit: ${fit.reason})`;
+
   if (stepsTodayInput) {
     stepsTodayInput.placeholder = (estT && estT.avgSteps != null)
       ? `avg ${Math.round(estT.avgSteps).toLocaleString()}`
@@ -849,8 +997,8 @@ function render() {
       } else if (stepsToday == null) {
         stepNote = `Assuming your average steps (${Math.round(estT.avgSteps).toLocaleString()}) — type today's steps above to adjust.`;
       } else {
-        stepAdj = (stepsToday - estT.avgSteps) * stepKcal;
-        stepNote = `Steps: ${stepsToday.toLocaleString()} vs ${Math.round(estT.avgSteps).toLocaleString()} avg at ${stepKcal} kcal/step.`;
+        stepAdj = (stepsToday - estT.avgSteps) * kPerStep;
+        stepNote = `Steps: ${stepsToday.toLocaleString()} vs ${Math.round(estT.avgSteps).toLocaleString()} avg, at ${kSource}.`;
       }
 
       const budget = estT.m + stepAdj + paceKcal;
