@@ -1,7 +1,9 @@
 const STORAGE_KEY = "wt_entries_v1";
 const GOAL_KEY = "wt_goal_delta7_v1";
 const F_KEY = "wt_plan_from_v1";
-const APP_VERSION = "2026-10-24.1";
+const STEP_KCAL_KEY = "wt_step_kcal_v1";
+const BUDGET_STEPS_KEY = "wt_budget_steps_v1";
+const APP_VERSION = "2026-10-24.2";
 
 // Energy-balance constant: calories per pound of body weight change.
 // An approximation (true for fat; mixed tissue varies) — good enough here.
@@ -59,6 +61,12 @@ const planTodayEl = document.getElementById("planToday");
 const reqRemainingAvgEl = document.getElementById("reqRemainingAvg");
 const reqRemainingHintEl = document.getElementById("reqRemainingHint");
 
+// Today's calorie budget
+const calBudgetEl = document.getElementById("calBudget");
+const calBudgetHintEl = document.getElementById("calBudgetHint");
+const stepsTodayInput = document.getElementById("stepsTodayInput");
+const stepKcalInput = document.getElementById("stepKcalInput");
+
 // Energy (B-driven, like the dashboard)
 const tdee14El = document.getElementById("tdee14");
 const tdee14HintEl = document.getElementById("tdee14Hint");
@@ -86,6 +94,10 @@ let tManual = false;
 
 // Goal persists
 let goalDelta7 = loadGoalDelta7();
+
+// Calorie-budget inputs persist (steps only for the current day)
+let stepKcal = loadStepKcal();
+let stepsToday = loadBudgetSteps();
 
 // ---------- UTIL ----------
 function todayISO() {
@@ -228,6 +240,29 @@ function loadGoalDelta7() {
 
 function saveGoalDelta7(v) {
   localStorage.setItem(GOAL_KEY, String(v));
+}
+
+function loadStepKcal() {
+  const v = Number(localStorage.getItem(STEP_KCAL_KEY));
+  return (Number.isFinite(v) && v > 0 && v < 1) ? v : 0.04;
+}
+
+function saveStepKcal(v) {
+  localStorage.setItem(STEP_KCAL_KEY, String(v));
+}
+
+// "Steps today" is remembered only for the day it was typed on.
+function loadBudgetSteps() {
+  try {
+    const o = JSON.parse(localStorage.getItem(BUDGET_STEPS_KEY));
+    if (o && o.date === todayISO() && Number.isFinite(o.steps) && o.steps >= 0) return o.steps;
+  } catch {}
+  return null;
+}
+
+function saveBudgetSteps(v) {
+  if (v == null) localStorage.removeItem(BUDGET_STEPS_KEY);
+  else localStorage.setItem(BUDGET_STEPS_KEY, JSON.stringify({ date: todayISO(), steps: v }));
 }
 
 function loadPlanFrom() {
@@ -783,6 +818,53 @@ function render() {
     }
   }
 
+  // --- Third card: today's calorie budget ---
+  // Burn for THIS day (maintenance, adjusted for today's steps vs the window
+  // average) plus the plan's spread catch-up pace converted to calories.
+  // Anchored to real today — eating is inherently a today decision.
+  const estT28 = energyEstimate(entries, todayISO(), 28);
+  const estT14 = energyEstimate(entries, todayISO(), 14);
+  const estT =
+    (estT28.maintenance != null) ? { n: 28, m: estT28.maintenance, avgSteps: estT28.avgSteps } :
+    (estT14.maintenance != null) ? { n: 14, m: estT14.maintenance, avgSteps: estT14.avgSteps } : null;
+
+  if (stepsTodayInput) {
+    stepsTodayInput.placeholder = (estT && estT.avgSteps != null)
+      ? `avg ${Math.round(estT.avgSteps).toLocaleString()}`
+      : "e.g. 8000";
+  }
+
+  if (calBudgetEl && calBudgetHintEl) {
+    if (!estT) {
+      calBudgetEl.textContent = "—";
+      calBudgetHintEl.textContent =
+        "Needs a valid maintenance estimate first (see the Energy section for what's missing).";
+    } else {
+      const paceKcal = tgt.neededGap * KCAL_PER_LB / 7;
+
+      let stepAdj = 0;
+      let stepNote;
+      if (estT.avgSteps == null) {
+        stepNote = "No steps history in the window, so no step adjustment.";
+      } else if (stepsToday == null) {
+        stepNote = `Assuming your average steps (${Math.round(estT.avgSteps).toLocaleString()}) — type today's steps above to adjust.`;
+      } else {
+        stepAdj = (stepsToday - estT.avgSteps) * stepKcal;
+        stepNote = `Steps: ${stepsToday.toLocaleString()} vs ${Math.round(estT.avgSteps).toLocaleString()} avg at ${stepKcal} kcal/step.`;
+      }
+
+      const budget = estT.m + stepAdj + paceKcal;
+      calBudgetEl.textContent = `${Math.round(budget).toLocaleString()} kcal`;
+
+      const sign = (x) => `${x < 0 ? "−" : "+"} ${Math.abs(Math.round(x)).toLocaleString()}`;
+      calBudgetHintEl.textContent =
+        `${estT.n}d maintenance ${Math.round(estT.m).toLocaleString()} ` +
+        `${sign(paceKcal)} pace (${formatDelta(tgt.neededGap)} lb/wk)` +
+        (stepAdj !== 0 ? ` ${sign(stepAdj)} steps` : "") +
+        ` = ${Math.round(budget).toLocaleString()}. ${stepNote} Supports the ${formatISO(tISO)} target.`;
+    }
+  }
+
   // Entries list (latest first)
   const display = [...sorted].sort((a, b) => {
     if (a.date !== b.date) return b.date.localeCompare(a.date);
@@ -843,6 +925,27 @@ if (goalInput) {
   goalInput.addEventListener("input", () => {
     goalDelta7 = parseGoal(goalInput.value);
     saveGoalDelta7(goalDelta7);
+    render();
+  });
+}
+
+// Calorie-budget inputs
+if (stepsTodayInput) {
+  stepsTodayInput.value = (stepsToday != null) ? String(stepsToday) : "";
+  stepsTodayInput.addEventListener("input", () => {
+    const raw = stepsTodayInput.value.trim();
+    const v = raw === "" ? null : Number(raw);
+    stepsToday = (v != null && Number.isFinite(v) && v >= 0) ? v : null;
+    saveBudgetSteps(stepsToday);
+    render();
+  });
+}
+if (stepKcalInput) {
+  stepKcalInput.value = String(stepKcal);
+  stepKcalInput.addEventListener("input", () => {
+    const v = Number(stepKcalInput.value.trim().replace(",", "."));
+    stepKcal = (Number.isFinite(v) && v > 0 && v < 1) ? v : 0.04;
+    saveStepKcal(stepKcal);
     render();
   });
 }

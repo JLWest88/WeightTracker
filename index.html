@@ -151,6 +151,25 @@
 <div class="value valueHero" id="reqRemainingAvg">—</div>
           <div class="tiny muted" id="reqRemainingHint" style="margin-top:6px;">—</div>
         </div>
+
+        <!-- Today's calorie budget: step-adjusted burn + the plan's catch-up pace -->
+        <div class="card metric planHero" style="margin-top:12px;">
+          <div class="label">Today's calorie budget</div>
+          <div class="value valueHero" id="calBudget">—</div>
+
+          <div class="controlsRow" style="margin-top:10px;">
+            <label style="flex:1; min-width:120px;">
+              Steps today
+              <input id="stepsTodayInput" type="number" inputmode="numeric" step="1" min="0" placeholder="avg" />
+            </label>
+            <label style="width:110px;">
+              kcal / step
+              <input id="stepKcalInput" type="text" inputmode="decimal" placeholder="0.04" />
+            </label>
+          </div>
+
+          <div class="tiny muted" id="calBudgetHint" style="margin-top:6px;">—</div>
+        </div>
       </section>
 
       <!-- DASHBOARD (B-DRIVEN) -->
@@ -295,12 +314,13 @@
           <li>If you skip a day, it is simply not counted (no zeros inserted).</li>
           <li><b>Maintenance est.</b>: average calories eaten over the window, minus the calories your weight change accounts for (trend change × 3500 ÷ window days). The trend uses MA7 at each end of the window, so daily water noise stays out. It calibrates to <i>your</i> logging, so consistency matters more than accuracy — but it needs calories on at least 80% of the window's days.</li>
           <li><b>Latest day's balance</b>: that day's calories minus the maintenance estimate — your surplus (+) or deficit (−), with the weekly pace it implies.</li>
+          <li><b>Today's calorie budget</b>: maintenance, adjusted for today's steps vs your average (± kcal/step setting), plus the Plan's catch-up pace converted to calories (pace × 3500 ÷ 7). Behind pace → the budget tightens; ahead → it loosens.</li>
         </ul>
       </section>
     </main>
 
     <!-- Cache-bust version -->
-    <script src="app.js?v=20261024.1"></script>
+    <script src="app.js?v=20261024.2"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js"));
